@@ -1,0 +1,29 @@
+# Sensible Daten und Konfiguration
+logs/
+data/*.db
+data/backups/
+*.log
+
+# System-Dateien
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.env
+.env.local
+
+# IDE-Dateien
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS-Dateien
+.DS_Store
+Thumbs.db
+
+# Benutzerspezifische Konfiguration
+persona.txt
+config/settings.json

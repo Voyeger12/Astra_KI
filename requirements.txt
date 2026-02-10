@@ -1,0 +1,8 @@
+# ASTRA 2.0 AI Chat Assistant - Production Ready
+# pip install -r requirements.txt
+
+PyQt6>=6.6.0
+requests>=2.31.0
+duckduckgo-search>=3.9.0
+psutil>=5.9.0
+pyinstaller>=6.1.0
