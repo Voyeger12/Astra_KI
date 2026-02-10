@@ -1,3 +1,4 @@
+chcp 65001 >nul
 @echo off
 REM ASTRA AI - Windows Batch Starter
 REM Production-Ready Version mit Sicherheit & Error-Handling
