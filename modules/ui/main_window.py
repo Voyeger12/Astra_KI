@@ -713,8 +713,15 @@ class ChatWindow(QMainWindow):
         self.message_input.setEnabled(True)
         self._streaming_started = False
         
-        # PERFORMANCE: Nutze insertHtml() statt setHtml() um nur den neuen Content zu appenden
-        # Das erspart uns rfind()-Suche und komplette HTML-Neu-Rendering!
+        # WICHTIG: Entferne den Placeholder BEVOR wir die neue Bubble hinzufügen!
+        html = self.chat_display.toHtml()
+        html = html.replace(
+            '⏳ Im Gedanken... (KI generiert eine Antwort)',
+            ''
+        )
+        self.chat_display.setHtml(html)
+        
+        # Jetzt füge den echten Response mit vollständiger Formatierung ein
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
         self.chat_display.insertHtml(self._assistant_bubble_html(response, source="llm"))
         
