@@ -134,6 +134,7 @@ class SearchEngine:
     def needs_search(user_message: str) -> bool:
         """
         Erkennt ob eine Internet-Suche nötig ist
+        NUR für spezifische Fragen, nicht für allgemeine Aussagen
         
         Args:
             user_message: Benutzer-Nachricht
@@ -141,31 +142,44 @@ class SearchEngine:
         Returns:
             True wenn Search nötig, False sonst
         """
-        # Keywords die Internet-Suche erfordern
-        search_keywords = [
-            # Wetter
-            'wetter', 'temperatur', 'regen', 'schnee', 'wind', 'frost', 'hagel',
-            'regenwahrscheinlichkeit', 'niederschlag', 'prognose',
-            # Nachrichten/Aktuelle Infos
-            'nachrichten', 'news', 'aktuell', 'gestern', 'heute', 'morgen',
-            'passiert', 'ereignis', 'unfall', 'skandal',
-            # Preise/Börse
-            'preis', 'kurs', 'bitcoin', 'dollar', 'euro', 'aktie', 'börse',
-            # Sportergebnisse
-            'ergebnis', 'spiel', 'fußball', 'tor', 'gewonnen', 'meisterschaft',
-            # Ortsgebundene Info
-            'restaurant', 'hotel', 'adresse', 'öffnungszeit', 'telefon',
-            'wie komme ich', 'wo ist', 'nähe von',
-            # Allgemeine aktuelle Infos
-            'wie ist', 'what is', 'who is', 'aktuelle'
+        import re
+        
+        message_lower = user_message.lower().strip()
+        
+        # Nachricht muss mindestens eine Frage sein (? oder Fragekonstruktion)
+        # ODER sehr spezifische Such-Keywords enthalten
+        
+        # Pattern für echte Fragen
+        question_patterns = [
+            r'wie\s+ist.*(?:wetter|temperatur|prognose)',  # "Wie ist das Wetter"
+            r'(?:wetter|temperatur).*(?:morgen|heute|jetzt|prognose)',  # "Wetter morgen"
+            r'regen.*(?:heute|morgen)',  # "Regen heute/morgen"
+            r'wetter\s*\?',  # "Wetter?"
+            r'nachrichten\s*\?',  # "Nachrichten?"
+            r'preis\s*\?',  # "Preis?"
+            r'kurs\s*\?',  # "Kurs?"
+            r'bitcoin.*(?:\?|kurs|preis)',  # "Bitcoin Kurs/Preis?"
+            r'(?:gold|dax|dow|nasdaq).*\?',  # Börsen-Indizes
+            r'(?:wer|was|wo|wann).*(?:ist|war|aktuell|aktuell).*\?',  # Spezifische Fragen
         ]
         
-        message_lower = user_message.lower()
-        
-        # Prüfe ob Suche nötig
-        for keyword in search_keywords:
-            if keyword in message_lower:
+        # Prüfe die Frage-Patterns
+        for pattern in question_patterns:
+            if re.search(pattern, message_lower):
                 return True
+        
+        # Spezifische Suchwörter NUR wenn sie allein in der Nachricht stehen
+        # oder mit sehr klarem Such-Kontext
+        specific_keywords = {
+            'bitcoin': [r'\bbitcoin\b.*(?:preis|kurs)', r'(?:preis|kurs).*bitcoin'],
+            'dax': [r'\bdax\b.*(?:index|kurs)', r'(?:index|kurs).*dax'],
+            'gold': [r'\bgold.*(?:preis|kurs)', r'(?:preis|kurs).*gold'],
+        }
+        
+        for keyword, patterns in specific_keywords.items():
+            for pattern in patterns:
+                if re.search(pattern, message_lower):
+                    return True
         
         return False
     
