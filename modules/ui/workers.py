@@ -98,13 +98,19 @@ class SearchWorker(QThread):
         """Führt die Suche in einem separaten Thread durch"""
         try:
             from modules.utils import SearchEngine
+            from modules.logger import astra_logger
+            
+            astra_logger.info(f"SearchWorker: Suche startet für '{self.query}'")
             
             # Führe Suche durch (blockiert nur diesen Worker, nicht die UI!)
             results = SearchEngine.search(self.query, self.max_results)
             
+            astra_logger.info(f"SearchWorker: Suche abgeschlossen - erfolg={results.get('erfolg')}")
+            
             self.finished.emit(results)
         except Exception as e:
-            self.error.emit(f"Sucherror: {str(e)[:100]}")
+            astra_logger.error(f"SearchWorker Exception: {str(e)[:150]}")
+            self.error.emit(f"SearchWorker: {str(e)[:100]}")
 
 
 __all__ = ['LLMWorker', 'LLMStreamWorker', 'HealthWorker', 'SearchWorker']

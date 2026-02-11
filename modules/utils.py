@@ -184,17 +184,27 @@ class SearchEngine:
         try:
             from duckduckgo_search import DDGS
             import time
+            from modules.logger import astra_logger
             
             # Sanitiere Query
             original_query = query
             query = SecurityUtils.sanitize_input(query, max_length=200)
             
+            astra_logger.info(f"🔍 Suche gestartet: '{query}'")
+            
             # Führe Suche durch
-            ddgs = DDGS(timeout=10)
-            results = ddgs.text(query, max_results=max_results)
+            try:
+                ddgs = DDGS(timeout=10)
+                results = list(ddgs.text(query, max_results=max_results))
+                astra_logger.info(f"✅ {len(results)} Ergebnisse gefunden")
+            except Exception as search_error:
+                astra_logger.error(f"❌ DuckDuckGo Fehler: {str(search_error)[:100]}")
+                raise
+            
             time.sleep(0.5)  # Rate limiting
             
             if not results:
+                astra_logger.warning(f"⚠️ Keine Ergebnisse für '{query}'")
                 return {
                     'erfolg': False,
                     'ergebnisse': [],
@@ -222,6 +232,8 @@ class SearchEngine:
             # Erstelle Zusammenfassung basierend auf Query-Typ
             zusammenfassung = SearchEngine._summarize_results(original_query, formatted_results)
             
+            astra_logger.info(f"✅ Suche erfolgreich verarbeitet")
+            
             return {
                 'erfolg': True,
                 'ergebnisse': formatted_results,
@@ -229,13 +241,15 @@ class SearchEngine:
                 'original_query': original_query
             }
         
-        except ImportError:
+        except ImportError as e:
+            astra_logger.error(f"❌ duckduckgo_search nicht installiert: {str(e)}")
             return {
                 'erfolg': False,
                 'ergebnisse': [],
-                'zusammenfassung': "⚠️ duckduckgo_search nicht installiert. Installieren Sie: pip install duckduckgo-search"
+                'zusammenfassung': "⚠️ duckduckgo-search nicht installiert. Bitte installieren Sie: pip install duckduckgo-search"
             }
         except Exception as e:
+            astra_logger.error(f"❌ Sucherror: {str(e)[:150]}")
             return {
                 'erfolg': False,
                 'ergebnisse': [],

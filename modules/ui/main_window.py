@@ -530,18 +530,32 @@ class ChatWindow(QMainWindow):
     
     def on_search_finished(self, search_results: Dict):
         """Wird aufgerufen wenn die Internet-Suche fertig ist"""
+        from modules.logger import astra_logger
+        
         search_context = ""
         
         if search_results.get('erfolg'):
-            search_context = f"\n[INTERNET SEARCH RESULTS]\n{search_results.get('zusammenfassung', '')}\n[END SEARCH RESULTS]\n"
+            zusammenfassung = search_results.get('zusammenfassung', '')
+            astra_logger.info(f"✅ Suche erfolgreich: {zusammenfassung[:100]}...")
+            
+            # Formatiere die Zusammenfassung besser für die KI
+            search_context = (
+                f"\n\n[INTERNET SEARCH RESULTS FOR: {search_results.get('original_query', '')}]\n"
+                f"{zusammenfassung}\n"
+                f"[END SEARCH RESULTS]\n\n"
+            )
             
             # Entferne "Suche im Internet..." Bubble
             html = self.chat_display.toHtml()
             html = html.replace('🔍 Suche im Internet...', '')
             self.chat_display.setHtml(html)
+            astra_logger.info("✅ Suche-Bubble entfernt, starte LLM...")
         else:
             # Fehler bei Suche
-            search_context = f"\n[SEARCH ERROR: {search_results.get('zusammenfassung', 'Unbekannter Fehler')}]\n"
+            error_msg = search_results.get('zusammenfassung', 'Unbekannter Fehler')
+            astra_logger.warning(f"⚠️ Suche fehlgeschlagen: {error_msg}")
+            
+            search_context = f"\n[SEARCH ERROR: {error_msg}]\n"
             html = self.chat_display.toHtml()
             html = html.replace('🔍 Suche im Internet...', '')
             self.chat_display.setHtml(html)
@@ -551,13 +565,18 @@ class ChatWindow(QMainWindow):
     
     def on_search_error(self, error: str):
         """Wird aufgerufen wenn Suche fehlschlägt"""
+        from modules.logger import astra_logger
+        
+        astra_logger.error(f"❌ SearchWorker Error: {error}")
+        
         html = self.chat_display.toHtml()
         html = html.replace('🔍 Suche im Internet...', '')
         self.chat_display.setHtml(html)
         
-        search_context = f"\n[SEARCH FAILED: {error}]\n"
+        search_context = f"\n[INTERNET SEARCH FAILED: {error}]\n"
         
-        # Starte LLM trotzdem ohne Such-Kontext
+        # Starte LLM trotzdem, aber mit Fehler-Info
+        astra_logger.info("⚠️ Starte LLM ohne Suchergebnisse (Fehler)")
         self._start_llm_request(self._pending_user_message, search_context)
     
     def _start_llm_request(self, user_message: str, search_context: str = ""):
