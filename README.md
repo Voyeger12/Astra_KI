@@ -85,10 +85,7 @@ ASTRA: "Das Wetter in München ist derzeit sonnig mit 12°C..."
 ### 💾 Auto-Learning Memory
 
 **Intelligente Informationen-Erfassung:**
-- 👤 Namen: "Ich heiße Duncan"
-- 📍 Orte: "Ich bin in Essen"
-- 🎂 Alter: "Ich bin 28 Jahre alt"
-- ❤️ Interessen: "Ich mag Programmierung"
+
 
 ### 📱 Multi-Chat Sessions
 - Unbegrenzte parallele Chats
