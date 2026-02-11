@@ -707,25 +707,18 @@ class ChatWindow(QMainWindow):
     
     def on_response_received(self, response: str):
         """Wird aufgerufen wenn die komplette Antwort fertig ist
-        PERFORMANCE: Nur EINMAL formatting + rendering am Ende!
+        ULTRA-PERFORMANCE: RichFormatter läuft in Worker-Thread!
         """
         self.is_waiting_for_response = False
         self.message_input.setEnabled(True)
         self._streaming_started = False
         
-        # WICHTIG: Entferne den Placeholder BEVOR wir die neue Bubble hinzufügen!
+        # WICHTIG: Entferne den Placeholder BEVOR wir formatieren (non-blocking!)
         html = self.chat_display.toHtml()
-        html = html.replace(
-            '⏳ Im Gedanken... (KI generiert eine Antwort)',
-            ''
-        )
+        html = html.replace('⏳ Im Gedanken... (KI generiert eine Antwort)', '')
         self.chat_display.setHtml(html)
         
-        # Jetzt füge den echten Response mit vollständiger Formatierung ein
-        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.insertHtml(self._assistant_bubble_html(response, source="llm"))
-        
-        # Memory & speichern
+        # Memory & speichern SOFORT (keine Blockierung)
         memory_texts = self.memory_manager.extract_memory_from_response(response)
         for memory_text in memory_texts:
             if memory_text:
@@ -734,7 +727,46 @@ class ChatWindow(QMainWindow):
         clean_response = self.memory_manager.remove_tags_from_response(response)
         self.db.save_message(self.current_chat, "assistant", clean_response)
         
+        # PERFORMANCE: Starte RichFormatter in Worker-Thread!
+        # Das verhindert UI-Blockierung bei großem Content
+        from modules.ui.workers import RichFormatterWorker
+        
+        self.formatter_worker = RichFormatterWorker(response, source="llm")
+        self.formatter_worker.finished.connect(self._on_formatted_response)
+        self.formatter_worker.error.connect(self._on_formatter_error)
+        self.formatter_worker.start()
+    
+    def _on_formatted_response(self, formatted_html: str):
+        """Callback wenn RichFormatter Worker fertig ist - SUPER SCHNELL!"""
+        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
+        self.chat_display.insertHtml(formatted_html)
+        
         # Scrolle zum Ende
+        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
+        self.chat_display.ensureCursorVisible()
+    
+    def _on_formatter_error(self, error: str):
+        """Fallback wenn RichFormatter failt - zeige Plain-Text Bubble"""
+        astra_logger = __import__('modules.logger', fromlist=['astra_logger']).astra_logger
+        astra_logger.warning(f"⚠️ RichFormatter Error: {error}, nutze Fallback")
+        
+        # Fallback: Nutze _assistant_bubble_html() direkt (ohne RichFormatter)
+        from html import escape
+        safe_text = escape(f"[Formatierungsfehler: {error[:50]}]")
+        
+        fallback_html = (
+            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+            f'<td align="left" style="padding:8px 4px;">'
+            f'<div style="display:inline-block;background:#2a2a2a;color:#ff6b6b;border-radius:20px;padding:12px 18px;margin:8px 4px;border:2px solid #ff6b6b;max-width:85%;word-wrap:break-word;font-size:10pt;box-shadow:0 2px 8px rgba(0,0,0,0.5);">'
+            f'{safe_text}'
+            '</div>'
+            '</td>'
+            '<td width="10%"></td>'
+            '</tr></table>'
+        )
+        
+        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
+        self.chat_display.insertHtml(fallback_html)
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
         self.chat_display.ensureCursorVisible()
     
