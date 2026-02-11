@@ -19,9 +19,10 @@ class MemoryManager:
     # WICHTIG: [\w\s\-äöüÄÖÜß] erlaubt Umlaute und Wörter mit Bindestrichen
     MEMORY_PATTERNS = {
         # NAME: Nur eindeutige Patterns für Namen (nicht "ich bin" - zu viel Noise!)
-        r"(?:ich hei[ß]e|mein name ist|my name is|call me)\s+([A-Z][a-zäöüß\-]*(?:\s+[A-Z][a-zäöüß\-]*)*)": ("name", "personal"),
-        # AGE: "ich bin X Jahre alt"
-        r"(?:ich bin|i am|i\'m)\s+(\d+)\s+(?:jahr|Jahre|years|year)(?:\s+alt)?": ("age", "personal"),
+        # WICHTIG: \b am Ende verhindert dass "und bin" mitgematchet wird
+        r"(?:ich hei[ß]e|mein name ist|my name is|call me)\s+([A-Z][a-zäöüß\-]*(?:\s+[A-Z][a-zäöüß\-]*)?)\b": ("name", "personal"),
+        # AGE: "ich/und bin X Jahre alt" oder "X Jahre alt" standalone
+        r"(?:(?:ich|und)\s+)?(?:bin|bist|am|i\'m|i am)\s+(\d+)\s+(?:jahr|Jahre|years|year)(?:\s+alt)?": ("age", "personal"),
         # LOCATION: "ich lebe/wohne in X"
         r"(?:ich lebe|ich wohne|i live|i\'m from)\s+(?:in\s+)?([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("location", "personal"),
         # LIKES: "ich mag X"
@@ -78,6 +79,11 @@ class MemoryManager:
                     if category not in extracted:  # Nur erste Übereinstimmung
                         value = match.group(1).strip() if match.lastindex else match.group(0).strip()
                         if value and len(value) > 1:
+                            # ✅ FIX: Trimme Namen die mit "und", "oder", "bin", "am" etc weitergehen
+                            # Das verhindert dass "Müller und bin" gematchet wird
+                            if category == "name":
+                                value = self._trim_captured_name(value)
+                            
                             extracted[category] = {
                                 "value": value,
                                 "type": info_type
@@ -100,19 +106,67 @@ class MemoryManager:
                     "type": "personal"
                 }
             
-            # Name fallback: Nach "ich " das erste Wort (egal gross/klein)
-            # Konvertiere zu Capitalized form: "duncan" → "Duncan"
-            name_match = re.search(r'ich\s+(\w+)', text_clean_lower)
+            # Name fallback: Mehrere Strategien
+            name_value = None
+            
+            # Strategie 1: "ich [CAPITALIZED]" (excludes "ich bin/am/have/do")
+            name_match = re.search(r'ich\s+(?!bin|bist|am|are|have|has|do|does)(\w+)', text_clean_lower)
             if name_match:
-                name_value = name_match.group(1)
-                # Capitalize: "duncan" → "Duncan"
-                name_value = name_value.capitalize()
+                name_value = name_match.group(1).capitalize()
+            
+            # Strategie 2: "ich bin [CAPITALIZED]" - aber nur wenn das Wort mit Großbuchstabe anfängt im Original
+            # Das deutet auf einen Namen hin (nicht "ich bin Programmierer", aber "ich bin Sarah")
+            if not name_value:
+                # Suche nach Großbuchstabe nach "ich bin"
+                bin_name_match = re.search(r'ich\s+bin\s+([A-Z]\w+)', text)  # Original text mit Groß/Kleinschreibung!
+                if bin_name_match:
+                    name_value = bin_name_match.group(1)
+            
+            # Strategie 3: Einfach das erste Wort nach "ich"  
+            if not name_value:
+                simple_match = re.search(r'ich\s+(\w+)', text_clean_lower)
+                if simple_match:
+                    name_value = simple_match.group(1).capitalize()
+            
+            if name_value:
                 extracted["name"] = {
                     "value": name_value,
                     "type": "personal"
                 }
         
         return extracted
+    
+    def _trim_captured_name(self, name: str) -> str:
+        """
+        Trimmt einen Namen wenn er zu viel captured hat
+        "Müller und" → "Müller"
+        "bin nicht xyz" → "Bin" (aber das sollte nicht vorkommen)
+        
+        Args:
+            name: Der potentiell zu lange erfasste Name
+        
+        Returns:
+            Der gekürzte Name
+        """
+        # Common words dass nicht Teil des Namens sind
+        stop_words = ["und", "oder", "aber", "bin", "bist", "am", "are", "is", "have", "has", "do", "does"]
+        
+        # Split by spaces
+        parts = name.split()
+        
+        # Nur das erste Wort (oder erste 2 Wörter für compound names)
+        # Aber: Beende vorzeitig wenn wir auf ein Stop-Word treffen
+        result = []
+        for part in parts:
+            # Checke ob das Wort ein Stop-Word ist (case-insensitive)
+            if part.lower() in stop_words:
+                break
+            result.append(part)
+            # Limit zu max 2 Wörter für Namen (z.B. "John Michael" oder "Jean-Pierre")
+            if len(result) >= 2:
+                break
+        
+        return " ".join(result) if result else name
     
     def auto_learn_from_message(self, message: str) -> list:
         """
