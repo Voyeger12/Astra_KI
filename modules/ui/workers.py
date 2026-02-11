@@ -83,4 +83,28 @@ class HealthWorker(QThread):
         self._stopped = True
 
 
-__all__ = ['LLMWorker', 'LLMStreamWorker', 'HealthWorker']
+class SearchWorker(QThread):
+    """Worker-Thread für Internet-Suche (non-blocking UI)"""
+    
+    finished = pyqtSignal(dict)  # Sendet Suchergebnisse zurück
+    error = pyqtSignal(str)
+    
+    def __init__(self, query: str, max_results: int = 5):
+        super().__init__()
+        self.query = query
+        self.max_results = max_results
+    
+    def run(self):
+        """Führt die Suche in einem separaten Thread durch"""
+        try:
+            from modules.utils import SearchEngine
+            
+            # Führe Suche durch (blockiert nur diesen Worker, nicht die UI!)
+            results = SearchEngine.search(self.query, self.max_results)
+            
+            self.finished.emit(results)
+        except Exception as e:
+            self.error.emit(f"Sucherror: {str(e)[:100]}")
+
+
+__all__ = ['LLMWorker', 'LLMStreamWorker', 'HealthWorker', 'SearchWorker']

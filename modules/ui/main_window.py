@@ -25,7 +25,7 @@ from modules.utils import SearchEngine, TextUtils
 
 # Modularisierte Imports aus ui Submodule
 from modules.ui.styles import StyleSheet
-from modules.ui.workers import LLMWorker, LLMStreamWorker, HealthWorker
+from modules.ui.workers import LLMWorker, LLMStreamWorker, HealthWorker, SearchWorker
 from modules.ui.settings_manager import SettingsManager
 from modules.ui.settings_dialog import SettingsDialog
 
@@ -66,6 +66,7 @@ class ChatWindow(QMainWindow):
         
         # Worker-Thread
         self.llm_worker = None
+        self.search_worker = None
         self._ollama_alive = False
         self.health_worker = None
         
@@ -73,6 +74,7 @@ class ChatWindow(QMainWindow):
         self.current_chat = None
         self.is_waiting_for_response = False
         self._streaming_started = False
+        self._pending_user_message = ""
         
         # Timer für Status-Updates
         self.status_timer = QTimer()
@@ -490,6 +492,7 @@ class ChatWindow(QMainWindow):
         self.chat_display.insertHtml(self._user_bubble_html(safe_message))
         self.db.save_message(self.current_chat, "user", message)
         self.message_input.clear()
+        self.message_input.setEnabled(False)
         
         # Auto-learn
         saved_info = self.memory_manager.auto_learn_from_message(message)
@@ -505,53 +508,73 @@ class ChatWindow(QMainWindow):
 
             self.chat_display.setHtml(html_content)
         
-        # === INTERNET SEARCH INTEGRATION ===
-        search_results = None
-        search_context = ""
-        
+        # === ASYNCHRONE INTERNET SEARCH INTEGRATION ===
         if SearchEngine.needs_search(message):
+            # Speichere Message für später
+            self._pending_user_message = message
+            
             # Zeige Such-Status
             self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
             self.chat_display.insertHtml(self._assistant_bubble_html('🔍 Suche im Internet...'))
-            QApplication.processEvents()  # UI aktualisieren
+            self.is_waiting_for_response = True
             
-            # Führe Suche durch
-            try:
-                search_results = SearchEngine.search(message, max_results=5)
-                
-                if search_results.get('erfolg'):
-                    search_context = f"\n[INTERNET SEARCH RESULTS]\n{search_results.get('zusammenfassung', '')}\n[END SEARCH RESULTS]\n"
-                    
-                    # Entferne "Suche im Internet..." Bubble
-                    html = self.chat_display.toHtml()
-                    html = html.replace('🔍 Suche im Internet...', '')
-                    self.chat_display.setHtml(html)
-                else:
-                    # Fehler bei Suche
-                    search_context = f"\n[SEARCH ERROR: {search_results.get('zusammenfassung', 'Unbekannter Fehler')}]\n"
-                    html = self.chat_display.toHtml()
-                    html = html.replace('🔍 Suche im Internet...', '')
-                    self.chat_display.setHtml(html)
-            except Exception as e:
-                search_context = f"\n[SEARCH EXCEPTION: {str(e)[:100]}]\n"
-                html = self.chat_display.toHtml()
-                html = html.replace('🔍 Suche im Internet...', '')
-                self.chat_display.setHtml(html)
+            # Starte SearchWorker (asynchron, blockiert UI nicht!)
+            self.search_worker = SearchWorker(message, max_results=5)
+            self.search_worker.finished.connect(self.on_search_finished)
+            self.search_worker.error.connect(self.on_search_error)
+            self.search_worker.start()
+        else:
+            # Keine Suche nötig - starte LLM direkt
+            self._pending_user_message = message
+            self._start_llm_request(message, "")
+    
+    def on_search_finished(self, search_results: Dict):
+        """Wird aufgerufen wenn die Internet-Suche fertig ist"""
+        search_context = ""
         
+        if search_results.get('erfolg'):
+            search_context = f"\n[INTERNET SEARCH RESULTS]\n{search_results.get('zusammenfassung', '')}\n[END SEARCH RESULTS]\n"
+            
+            # Entferne "Suche im Internet..." Bubble
+            html = self.chat_display.toHtml()
+            html = html.replace('🔍 Suche im Internet...', '')
+            self.chat_display.setHtml(html)
+        else:
+            # Fehler bei Suche
+            search_context = f"\n[SEARCH ERROR: {search_results.get('zusammenfassung', 'Unbekannter Fehler')}]\n"
+            html = self.chat_display.toHtml()
+            html = html.replace('🔍 Suche im Internet...', '')
+            self.chat_display.setHtml(html)
+        
+        # Starte LLM mit Such-Ergebnissen
+        self._start_llm_request(self._pending_user_message, search_context)
+    
+    def on_search_error(self, error: str):
+        """Wird aufgerufen wenn Suche fehlschlägt"""
+        html = self.chat_display.toHtml()
+        html = html.replace('🔍 Suche im Internet...', '')
+        self.chat_display.setHtml(html)
+        
+        search_context = f"\n[SEARCH FAILED: {error}]\n"
+        
+        # Starte LLM trotzdem ohne Such-Kontext
+        self._start_llm_request(self._pending_user_message, search_context)
+    
+    def _start_llm_request(self, user_message: str, search_context: str = ""):
+        """Startet die LLM-Anfrage mit optionalem Such-Kontext"""
         # Loading
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
         self.chat_display.insertHtml(self._assistant_bubble_html('🤖 ⏳ Im Gedanken...'))
         self.is_waiting_for_response = True
-        self.message_input.setEnabled(False)
         
         # Vorbereitung der Messages
         chats = self.db.get_all_chats()
         chat_history = chats.get(self.current_chat, [])
         
         # Erweitere die Benutzer-Nachricht mit Such-Kontext falls vorhanden
-        user_content = message
+        user_content = user_message
         if search_context:
-            user_content = f"{message}\n{search_context}"
+            user_content = f"{user_message}{search_context}"
         
         messages = [
             {"role": "system", "content": self.memory_manager.get_system_prompt()}
