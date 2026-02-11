@@ -771,11 +771,16 @@ class ChatWindow(QMainWindow):
         self.chat_display.ensureCursorVisible()
     
     def on_response_error(self, error: str):
-        """Wird aufgerufen bei Fehler"""
+        """Wird aufgerufen bei Fehler - ULTRA-FAST non-blocking!"""
         self.is_waiting_for_response = False
         self.message_input.setEnabled(True)
         
-        # Bessere Error Communication mit Details
+        # Entferne den Placeholder
+        html = self.chat_display.toHtml()
+        html = html.replace('⏳ Im Gedanken... (KI generiert eine Antwort)', '')
+        self.chat_display.setHtml(html)
+        
+        # Error Message mit Markdown
         error_message = f"""❌ **Fehler bei der KI-Antwort**
 
 **Fehler:** {error}
@@ -785,8 +790,13 @@ class ChatWindow(QMainWindow):
 - Das KI-Modell (`{self._selected_model}`) ist nicht verfügbar
 - Die KI hat zu lange für die Antwort gebraucht"""
         
-        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.insertHtml(self._assistant_bubble_html(error_message, source="llm"))
+        # Starte RichFormatter Worker auch für Error (nicht-blocking!)
+        from modules.ui.workers import RichFormatterWorker
+        
+        self.formatter_worker = RichFormatterWorker(error_message, source="llm")
+        self.formatter_worker.finished.connect(self._on_formatted_response)
+        self.formatter_worker.error.connect(self._on_formatter_error)
+        self.formatter_worker.start()
         
         astra_logger = __import__('modules.logger', fromlist=['astra_logger']).astra_logger
         astra_logger.error(f"❌ LLM Error: {error}")
