@@ -684,7 +684,7 @@ class ChatWindow(QMainWindow):
             # Initialisiere den Response Buffer
             self._current_response = ""
         
-        # Sammle den Chunk (KEIN HTML-ESCAPING hier!)
+        # Sammle den Chunk
         self._current_response += chunk
         
         # Aktualisiere das Chat-Display mit dem bisherigen Response
@@ -701,13 +701,35 @@ class ChatWindow(QMainWindow):
                 html = html[:last_table_idx]
         
         # Füge ein neues Bubble mit dem aktuellen Response hinzu
-        # RichFormatter macht das HTML-Escaping und Formatting!
-        html += self._assistant_bubble_html(self._current_response, source="llm")
+        # PERFORMANCE FIX: Nur Simple HTML Bubble während Streaming (kein RichFormatter!)
+        # RichFormatter wird erst am Ende in on_response_received() aufgerufen
+        html += self._simple_assistant_bubble_html(self._current_response)
         self.chat_display.setHtml(html)
         
         # Scrolle zum Ende
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
         self.chat_display.ensureCursorVisible()
+    
+    def _simple_assistant_bubble_html(self, text: str) -> str:
+        """
+        Einfache Bubble OHNE RichFormatter (nur für Streaming)
+        RichFormatter wird erst am Ende aufgerufen
+        """
+        from html import escape
+        safe_text = escape(text)
+        text_color = COLORS['text']
+        primary_color = COLORS['primary']
+        html = (
+            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+            f'<td align="left" style="padding:8px 4px;">'
+            f'<div style="display:inline-block;background:#2a2a2a;color:{text_color};border-radius:20px;padding:12px 18px;margin:8px 4px;border:2px solid {primary_color};max-width:85%;word-wrap:break-word;font-size:{self.current_text_size}pt;box-shadow:0 2px 8px rgba(0,0,0,0.5);">'
+            f'{safe_text}'
+            '</div>'
+            '</td>'
+            '<td width="10%"></td>'
+            '</tr></table>'
+        )
+        return html
     
     def on_response_received(self, response: str):
         """Wird aufgerufen wenn die komplette Antwort fertig ist"""
@@ -715,6 +737,23 @@ class ChatWindow(QMainWindow):
         self.message_input.setEnabled(True)
         self._streaming_started = False
         
+        # PERFORMANCE FIX: RichFormatter ERST hier aufrufen, nicht bei jedem Chunk!
+        # Das erspart uns hunderte Format-Calls während dem Streaming
+        html = self.chat_display.toHtml()
+        
+        # Entferne das letzte (jetzt vollständige) Simple-Assistant-Bubble
+        last_table_idx = html.rfind('<table')
+        if last_table_idx != -1:
+            last_table_end = html.rfind('</table>') + len('</table>')
+            if last_table_end > last_table_idx:
+                # Entferne das letzte Bubble
+                html = html[:last_table_idx]
+        
+        # Ersetze mit vollständig formatiertem Bubble (mit RichFormatter)
+        html += self._assistant_bubble_html(response, source="llm")
+        self.chat_display.setHtml(html)
+        
+        # Memory & speichern
         memory_texts = self.memory_manager.extract_memory_from_response(response)
         for memory_text in memory_texts:
             if memory_text:
