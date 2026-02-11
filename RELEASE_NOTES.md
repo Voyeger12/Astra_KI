@@ -1,6 +1,6 @@
 # ASTRA AI - Release Notes
 
-## Version 2.0.0 - 11. Februar 2026
+## Version 0.2 (Pre-Release) - 11. Februar 2026
 
 ### 🎉 Highlights
 - **Standalone Executable**: Vollständig eigenständige EXE-Datei ohne Python-Installation erforderlich
@@ -57,7 +57,7 @@ Nach dem ersten Start können folgende Aspekte konfiguriert werden:
 
 ### 📝 Changelog
 
-#### 2.0.0 (11.02.2026) - Production Ready mit Internet-Suche
+#### 0.2 (Pre-Release) - Initial Internet-Suche Feature
 **MAJOR:**
 - 🔍 Live Internet-Suche mit DuckDuckGo (neu!)
 - Asynchrone SearchWorker - UI bleibt responsive (neu!)

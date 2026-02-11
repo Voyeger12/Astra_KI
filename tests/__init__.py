@@ -13,5 +13,5 @@ Beispiel:
     python tests/test_quick.py  # Schnell
 """
 
-__version__ = "1.0.0"
+__version__ = "0.2"
 __all__ = ["test_suite", "test_quick", "runner"]
