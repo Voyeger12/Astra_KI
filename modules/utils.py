@@ -128,49 +128,196 @@ class SecurityUtils:
 
 
 class SearchEngine:
-    """Internet-Suche mit DuckDuckGo"""
+    """Internet-Suche mit DuckDuckGo + intelligente Zusammenfassung"""
     
     @staticmethod
-    def search(query: str, max_results: int = 3) -> str:
+    def needs_search(user_message: str) -> bool:
         """
-        Führt eine Suche mit DuckDuckGo durch
+        Erkennt ob eine Internet-Suche nötig ist
+        
+        Args:
+            user_message: Benutzer-Nachricht
+        
+        Returns:
+            True wenn Search nötig, False sonst
+        """
+        # Keywords die Internet-Suche erfordern
+        search_keywords = [
+            # Wetter
+            'wetter', 'temperatur', 'regen', 'schnee', 'wind', 'frost', 'hagel',
+            'regenwahrscheinlichkeit', 'niederschlag', 'prognose',
+            # Nachrichten/Aktuelle Infos
+            'nachrichten', 'news', 'aktuell', 'gestern', 'heute', 'morgen',
+            'passiert', 'ereignis', 'unfall', 'skandal',
+            # Preise/Börse
+            'preis', 'kurs', 'bitcoin', 'dollar', 'euro', 'aktie', 'börse',
+            # Sportergebnisse
+            'ergebnis', 'spiel', 'fußball', 'tor', 'gewonnen', 'meisterschaft',
+            # Ortsgebundene Info
+            'restaurant', 'hotel', 'adresse', 'öffnungszeit', 'telefon',
+            'wie komme ich', 'wo ist', 'nähe von',
+            # Allgemeine aktuelle Infos
+            'wie ist', 'what is', 'who is', 'aktuelle'
+        ]
+        
+        message_lower = user_message.lower()
+        
+        # Prüfe ob Suche nötig
+        for keyword in search_keywords:
+            if keyword in message_lower:
+                return True
+        
+        return False
+    
+    @staticmethod
+    def search(query: str, max_results: int = 5) -> Dict:
+        """
+        Führt eine Suche mit DuckDuckGo durch und fasst zusammen
         
         Args:
             query: Suchbegriff
             max_results: Maximale Ergebnisse
         
         Returns:
-            Formatierte Suchergebnisse oder Fehlermeldung
+            Dict mit 'erfolg', 'ergebnisse', 'zusammenfassung'
         """
         try:
+            from duckduckgo_search import DDGS
+            import time
+            
             # Sanitiere Query
+            original_query = query
             query = SecurityUtils.sanitize_input(query, max_length=200)
             
-            from duckduckgo_search import DDGS
-            
-            results = DDGS().text(query, max_results=max_results)
+            # Führe Suche durch
+            ddgs = DDGS(timeout=10)
+            results = ddgs.text(query, max_results=max_results)
+            time.sleep(0.5)  # Rate limiting
             
             if not results:
-                return "Keine Suchergebnisse gefunden."
+                return {
+                    'erfolg': False,
+                    'ergebnisse': [],
+                    'zusammenfassung': f"Keine Suchergebnisse für '{original_query}' gefunden."
+                }
             
-            formatted = []
+            # Verarbeite Ergebnisse
+            formatted_results = []
+            all_text = []
+            
             for i, r in enumerate(results, 1):
-                title = html_escape(r.get('title', 'Kein Titel'))
-                body = html_escape(r.get('body', 'Keine Beschreibung'))
-                href = html_escape(r.get('href', 'N/A'))
+                title = r.get('title', 'Kein Titel')
+                body = r.get('body', 'Keine Beschreibung')
+                href = r.get('href', 'N/A')
                 
-                formatted.append(
-                    f"{i}. **{title}**\n"
-                    f"   {body}\n"
-                    f"   Quelle: {href}"
-                )
+                formatted_results.append({
+                    'titel': title,
+                    'beschreibung': body,
+                    'quelle': href,
+                    'nummer': i
+                })
+                
+                all_text.append(f"{title}. {body}")
             
-            return "\n\n".join(formatted)
+            # Erstelle Zusammenfassung basierend auf Query-Typ
+            zusammenfassung = SearchEngine._summarize_results(original_query, formatted_results)
+            
+            return {
+                'erfolg': True,
+                'ergebnisse': formatted_results,
+                'zusammenfassung': zusammenfassung,
+                'original_query': original_query
+            }
         
         except ImportError:
-            return "⚠️ duckduckgo_search nicht installiert"
+            return {
+                'erfolg': False,
+                'ergebnisse': [],
+                'zusammenfassung': "⚠️ duckduckgo_search nicht installiert. Installieren Sie: pip install duckduckgo-search"
+            }
         except Exception as e:
-            return f"Fehler bei der Suche: [Blocked]"
+            return {
+                'erfolg': False,
+                'ergebnisse': [],
+                'zusammenfassung': f"Fehler bei der Suche: {str(e)[:100]}"
+            }
+    
+    @staticmethod
+    def _summarize_results(query: str, results: List[Dict]) -> str:
+        """
+        Fasst Suchergebnisse intelligent zusammen
+        
+        Args:
+            query: Original-Suchbegriff
+            results: Liste der Suchergebnisse
+        
+        Returns:
+            Zusammengefasster Text für die KI
+        """
+        if not results:
+            return "Keine Ergebnisse gefunden."
+        
+        query_lower = query.lower()
+        
+        # Wetter-Spezial-Handling
+        if any(w in query_lower for w in ['wetter', 'temperatur', 'regen', 'schnee']):
+            return SearchEngine._summarize_weather(results, query)
+        
+        # Nachrichten-Spezial-Handling
+        elif any(n in query_lower for n in ['nachrichten', 'news', 'aktuell', 'passiert']):
+            return SearchEngine._summarize_news(results, query)
+        
+        # Standard-Zusammenfassung
+        else:
+            summary = f"Suchergebnisse zu '{query}':\n\n"
+            for r in results[:3]:  # Top 3
+                summary += f"• {r['titel']}: {r['beschreibung'][:150]}...\n"
+                summary += f"  ({r['quelle']})\n\n"
+            return summary
+    
+    @staticmethod
+    def _summarize_weather(results: List[Dict], query: str) -> str:
+        """Spezial-Zusammenfassung für Wetter"""
+        summary = f"Wetter-Informationen zu '{query}':\n\n"
+        
+        # Sammle relevante Infos aus den Ergebnissen
+        for result in results[:2]:
+            beschreibung = result['beschreibung'].lower()
+            titel = result['titel']
+            
+            # Extrahiere Temperatur
+            temp_match = re.search(r'(-?\d+)\s*°?c', beschreibung, re.IGNORECASE)
+            if temp_match:
+                temp = temp_match.group(1)
+                summary += f"🌡️ Temperatur: {temp}°C\n"
+            
+            # Extrahiere Regen
+            if 'regen' in beschreibung or 'rain' in beschreibung:
+                summary += f"🌧️ Regen wahrscheinlich\n"
+            
+            if 'sonne' in beschreibung or 'sonnig' in beschreibung:
+                summary += f"☀️ Sonnig\n"
+            
+            if 'bewölkt' in beschreibung or 'cloudy' in beschreibung:
+                summary += f"☁️ Bewölkt\n"
+            
+            # Fallback wenn nichts extrahiert
+            if summary == f"Wetter-Informationen zu '{query}':\n\n":
+                summary += f"{result['beschreibung'][:200]}\n"
+        
+        summary += f"\nQuelle: {results[0]['quelle']}"
+        return summary
+    
+    @staticmethod
+    def _summarize_news(results: List[Dict], query: str) -> str:
+        """Spezial-Zusammenfassung für Nachrichten"""
+        summary = f"Aktuelle Nachrichten zu '{query}':\n\n"
+        
+        for i, result in enumerate(results[:3], 1):
+            summary += f"{i}. {result['titel']}\n"
+            summary += f"   {result['beschreibung'][:150]}...\n\n"
+        
+        return summary
 
 
 class TextUtils:

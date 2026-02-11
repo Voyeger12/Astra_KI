@@ -505,6 +505,39 @@ class ChatWindow(QMainWindow):
 
             self.chat_display.setHtml(html_content)
         
+        # === INTERNET SEARCH INTEGRATION ===
+        search_results = None
+        search_context = ""
+        
+        if SearchEngine.needs_search(message):
+            # Zeige Such-Status
+            self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
+            self.chat_display.insertHtml(self._assistant_bubble_html('🔍 Suche im Internet...'))
+            QApplication.processEvents()  # UI aktualisieren
+            
+            # Führe Suche durch
+            try:
+                search_results = SearchEngine.search(message, max_results=5)
+                
+                if search_results.get('erfolg'):
+                    search_context = f"\n[INTERNET SEARCH RESULTS]\n{search_results.get('zusammenfassung', '')}\n[END SEARCH RESULTS]\n"
+                    
+                    # Entferne "Suche im Internet..." Bubble
+                    html = self.chat_display.toHtml()
+                    html = html.replace('🔍 Suche im Internet...', '')
+                    self.chat_display.setHtml(html)
+                else:
+                    # Fehler bei Suche
+                    search_context = f"\n[SEARCH ERROR: {search_results.get('zusammenfassung', 'Unbekannter Fehler')}]\n"
+                    html = self.chat_display.toHtml()
+                    html = html.replace('🔍 Suche im Internet...', '')
+                    self.chat_display.setHtml(html)
+            except Exception as e:
+                search_context = f"\n[SEARCH EXCEPTION: {str(e)[:100]}]\n"
+                html = self.chat_display.toHtml()
+                html = html.replace('🔍 Suche im Internet...', '')
+                self.chat_display.setHtml(html)
+        
         # Loading
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
         self.chat_display.insertHtml(self._assistant_bubble_html('🤖 ⏳ Im Gedanken...'))
@@ -515,10 +548,15 @@ class ChatWindow(QMainWindow):
         chats = self.db.get_all_chats()
         chat_history = chats.get(self.current_chat, [])
         
+        # Erweitere die Benutzer-Nachricht mit Such-Kontext falls vorhanden
+        user_content = message
+        if search_context:
+            user_content = f"{message}\n{search_context}"
+        
         messages = [
             {"role": "system", "content": self.memory_manager.get_system_prompt()}
         ] + chat_history + [
-            {"role": "user", "content": message}
+            {"role": "user", "content": user_content}
         ]
         
         # Start LLM-STREAMING Worker
@@ -532,12 +570,6 @@ class ChatWindow(QMainWindow):
         self.llm_worker.finished.connect(self.on_response_received)
         self.llm_worker.error.connect(self.on_response_error)
         self.llm_worker.start()
-    
-    
-    def on_chunk_received(self, chunk: str):
-        """Wird aufgerufen wenn ein Text-Chunk vom LLM kommt"""
-        if not self._streaming_started:
-            # Erster Chunk: Entferne das "Im Gedanken..." Placeholder
             self._streaming_started = True
             html = self.chat_display.toHtml()
             # Entferne den Placeholder
