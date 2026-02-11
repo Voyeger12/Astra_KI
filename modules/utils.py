@@ -193,12 +193,12 @@ class SearchEngine:
             
             results = []
             
-            # Versuche DuckDuckGo
+            # Versuche DuckDuckGo mit neuem Paket
             try:
-                from duckduckgo_search import DDGS
-                astra_logger.info(f"📡 Nutze DuckDuckGo API...")
+                from ddgs import DDGS  # Neu: ddgs statt duckduckgo_search!
+                astra_logger.info(f"📡 Nutze DuckDuckGo API (ddgs)...")
                 
-                ddgs = DDGS(timeout=15, proxies=None)
+                ddgs = DDGS(timeout=15)
                 search_results = ddgs.text(query, max_results=max_results)
                 
                 # Konvertiere Iterator zu Liste mit Exception-Handling
@@ -210,6 +210,28 @@ class SearchEngine:
                     astra_logger.debug(f"  Result {i+1}: {result.get('title', 'N/A')[:50]}")
                 
                 astra_logger.info(f"✅ DuckDuckGo: {len(results)} Ergebnisse gefunden")
+            
+            except ImportError as import_error:
+                astra_logger.warning(f"⚠️ Paket 'ddgs' nicht gefunden, versuche altes Paket...")
+                try:
+                    from duckduckgo_search import DDGS  # Fallback zu altem Paket
+                    astra_logger.info(f"📡 Nutze DuckDuckGo API (duckduckgo_search - veraltet)...")
+                    
+                    ddgs = DDGS(timeout=15, proxies=None)
+                    search_results = ddgs.text(query, max_results=max_results)
+                    
+                    results = []
+                    for i, result in enumerate(search_results):
+                        if i >= max_results:
+                            break
+                        results.append(result)
+                    
+                    astra_logger.info(f"✅ DuckDuckGo (alt): {len(results)} Ergebnisse gefunden")
+                    astra_logger.warning(f"⚠️ BITTE UPDATEN: pip install ddgs")
+                
+                except Exception as fallback_error:
+                    astra_logger.error(f"❌ Beide DuckDuckGo Pakete fehlgeschlagen: {str(fallback_error)[:80]}")
+                    results = []
             
             except Exception as ddgs_error:
                 astra_logger.warning(f"⚠️ DuckDuckGo fehlgeschlagen: {str(ddgs_error)[:80]}")
