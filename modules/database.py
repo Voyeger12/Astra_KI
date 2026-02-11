@@ -137,9 +137,10 @@ class Database:
             astra_logger.error(f"Fehler bei DB-Initialisierung: {e}")
     
     def create_chat(self, name: str) -> int:
-        """Erstellt einen neuen Chat"""
+        """Erstellt einen neuen Chat (mit kurzem Timeout)"""
         try:
-            conn = sqlite3.connect(self.db_path, timeout=5, check_same_thread=False)
+            # Kurzer Timeout (1s statt 5s)
+            conn = sqlite3.connect(self.db_path, timeout=1, check_same_thread=False)
             cursor = conn.cursor()
             now = datetime.now().isoformat()
             cursor.execute(
@@ -152,16 +153,23 @@ class Database:
             return chat_id
         except sqlite3.IntegrityError:
             return None
+        except sqlite3.OperationalError:
+            # Wenn DB momentan locked, retry später mit get_chat_id()
+            return None
     
     def get_chat_id(self, name: str) -> Optional[int]:
-        """Holt die ID eines Chats"""
+        """Holt die ID eines Chats (mit kurzem Timeout, non-blocking)"""
         try:
-            conn = sqlite3.connect(self.db_path, timeout=5, check_same_thread=False)
+            # Kurzer Timeout (1s statt 5s) - verhindert UI-Blockierung
+            conn = sqlite3.connect(self.db_path, timeout=1, check_same_thread=False)
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM chats WHERE name = ?", (name,))
             result = cursor.fetchone()
             conn.close()
             return result[0] if result else None
+        except sqlite3.OperationalError:
+            # Wenn DB locked, return None und lass retry-logic in save_message() das fixen
+            return None
         except Exception:
             return None
     
@@ -199,13 +207,35 @@ class Database:
         mehrere gleichzeitige Schreibanforderungen serialisiert werden.
         """
         try:
-            # Ensure chat exists synchronously (cheap read/create)
+            # Ensure chat exists (mit Retry-Logic)
             chat_id = self.get_chat_id(chat_name)
             if not chat_id:
                 chat_id = self.create_chat(chat_name)
+            
+            # Wenn immer noch keine ID, versuche nochmal nach kurzem Wait
+            if not chat_id:
+                time.sleep(0.1)
+                chat_id = self.get_chat_id(chat_name)
+                if not chat_id:
+                    # Last resort: Erstelle mit Timeout=5s
+                    conn = sqlite3.connect(self.db_path, timeout=5, check_same_thread=False)
+                    cursor = conn.cursor()
+                    now = datetime.now().isoformat()
+                    cursor.execute(
+                        "INSERT INTO chats (name, created_at, updated_at) VALUES (?, ?, ?)",
+                        (name, now, now) if 'name' in locals() else (chat_name, now, now)
+                    )
+                    conn.commit()
+                    chat_id = cursor.lastrowid
+                    conn.close()
+            
             # Enqueue actual write job
-            self._write_queue.put((chat_name, role, content))
-            return True
+            if chat_id:
+                self._write_queue.put((chat_name, role, content))
+                return True
+            else:
+                astra_logger.error(f"Konnte Chat-ID für '{chat_name}' nicht erstellen")
+                return False
         except Exception as e:
             astra_logger.error(f"Fehler beim Enqueue der Nachricht: {e}")
             return False
