@@ -21,6 +21,7 @@ from modules.database import Database
 from modules.utils import SecurityUtils, RateLimiter
 from modules.ollama_client import OllamaClient
 from modules.memory import MemoryManager
+from modules.memory_enhanced import SmartMemoryIntegration
 from modules.utils import SearchEngine, TextUtils
 
 # Modularisierte Imports aus ui Submodule
@@ -28,6 +29,7 @@ from modules.ui.styles import StyleSheet
 from modules.ui.workers import LLMWorker, LLMStreamWorker, HealthWorker, SearchWorker
 from modules.ui.settings_manager import SettingsManager
 from modules.ui.settings_dialog import SettingsDialog
+from modules.ui.rich_formatter import RichFormatter
 
 
 class ChatWindow(QMainWindow):
@@ -52,6 +54,7 @@ class ChatWindow(QMainWindow):
         self.db = Database()
         self.ollama = OllamaClient()
         self.memory_manager = MemoryManager(self.db)
+        self.smart_memory = SmartMemoryIntegration(self.memory_manager, self.db)  # Enhanced Memory
         self.settings_manager = SettingsManager()
         
         # Rate-Limiting
@@ -379,30 +382,56 @@ class ChatWindow(QMainWindow):
         except Exception:
             pass
 
-    def _user_bubble_html(self, safe_text: str) -> str:
-        """HTML für User-Bubbles (Rot)"""
+    def _user_bubble_html(self, safe_text: str, source: str = None) -> str:
+        """HTML für User-Bubbles (Rot) mit Rich Formatting"""
+        # Nutze RichFormatter für Markdown und Code-Highlighting
+        formatted_content = RichFormatter.format_text(safe_text)
+        
+        # Badge für Source
+        source_badge = ""
+        if source:
+            source_badge = '<div style="font-size:10px;color:#aaa;margin-bottom:4px;">💬 Du</div>'
+        
         primary_color = COLORS['primary']
         html = (
             '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
             '<td width="10%"></td>'
             f'<td align="right" style="padding:8px 4px;">'
+            f'{source_badge}'
             f'<div style="display:inline-block;background:{primary_color};color:#ffffff;border-radius:20px;padding:12px 18px;margin:8px 4px;max-width:80%;word-wrap:break-word;font-size:{self.current_text_size}pt;font-weight:500;box-shadow:0 2px 8px rgba(255,75,75,0.3);">'
-            f'{safe_text}'
+            f'{formatted_content}'
             '</div>'
             '</td>'
             '</tr></table>'
         )
         return html
 
-    def _assistant_bubble_html(self, safe_text: str) -> str:
-        """HTML für KI-Bubbles (Dunkelgrau)"""
+    def _assistant_bubble_html(self, safe_text: str, source: str = None, confidence: float = None) -> str:
+        """HTML für KI-Bubbles (Dunkelgrau) mit Rich Formatting und Source-Badge"""
+        # Nutze RichFormatter für Markdown und Code-Highlighting
+        formatted_content = RichFormatter.format_text(safe_text)
+        
+        # Badge für Source
+        source_badge = ""
+        if source == "search":
+            source_badge = '<div style="font-size:10px;color:#a8f5a8;margin-bottom:4px;">🔍 Gesucht im Web</div>'
+        elif source == "llm":
+            source_badge = '<div style="font-size:10px;color:#a8d5f5;margin-bottom:4px;">🤖 KI-Antwort</div>'
+        elif source == "memory":
+            conf_pct = int(confidence * 100) if confidence else 0
+            conf_color = "#a8f5a8" if confidence >= 0.8 else "#f5d8a8" if confidence >= 0.6 else "#f5a8a8"
+            source_badge = f'<div style="font-size:10px;color:{conf_color};margin-bottom:4px;">💾 Erinnerung ({conf_pct}%)</div>'
+        elif source:
+            source_badge = f'<div style="font-size:10px;color:#aaa;margin-bottom:4px;">📝 {source}</div>'
+        
         text_color = COLORS['text']
         primary_color = COLORS['primary']
         html = (
             '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
             f'<td align="left" style="padding:8px 4px;">'
+            f'{source_badge}'
             f'<div style="display:inline-block;background:#2a2a2a;color:{text_color};border-radius:20px;padding:12px 18px;margin:8px 4px;border:2px solid {primary_color};max-width:85%;word-wrap:break-word;font-size:{self.current_text_size}pt;box-shadow:0 2px 8px rgba(0,0,0,0.5);">'
-            f'{safe_text}'
+            f'{formatted_content}'
             '</div>'
             '</td>'
             '<td width="10%"></td>'
@@ -423,15 +452,16 @@ class ChatWindow(QMainWindow):
         html_parts = []
         html_parts.append('<html><head><meta charset="utf-8"></head><body style="font-family: Segoe UI, Arial, sans-serif; background: transparent; color: ' + COLORS['text'] + ';">')
 
-        from html import escape
+        # Lade und zeige alle Messages mit Rich Formatting
         for msg in messages:
             role = msg["role"]
             content = msg["content"]
-            safe_content = escape(content)
+            
+            # RichFormatter macht HTML-escaping automatisch!
             if role == "user":
-                html_parts.append(self._user_bubble_html(safe_content))
+                html_parts.append(self._user_bubble_html(content))
             else:
-                html_parts.append(self._assistant_bubble_html(safe_content))
+                html_parts.append(self._assistant_bubble_html(content))
 
         html_parts.append('</body></html>')
         self.chat_display.setHtml(''.join(html_parts))
@@ -470,13 +500,11 @@ class ChatWindow(QMainWindow):
             memory_text = message[5:].strip()
             if memory_text:
                 self.memory_manager.smart_learn(memory_text)
-                from html import escape
-                safe_msg = escape(message)
-                safe_memory = escape(memory_text)
                 
                 html_content = self.chat_display.toHtml()
-                user_bubble = self._user_bubble_html(safe_msg)
-                success_bubble = self._assistant_bubble_html(f"✅ Gespeichert! Ich merke mir: {safe_memory}")
+                # RichFormatter eschapt automatisch, nicht doppelt escapen!
+                user_bubble = self._user_bubble_html(message)
+                success_bubble = self._assistant_bubble_html(f"✅ Gespeichert! Ich merke mir: {memory_text}", source="memory", confidence=0.95)
 
                 if '</body>' in html_content:
                     html_content = html_content.replace('</body>', user_bubble + success_bubble + '</body>')
@@ -489,11 +517,10 @@ class ChatWindow(QMainWindow):
                 self.message_input.clear()
                 return
         
-        from html import escape
-        safe_message = escape(message)
-        
+        # User-Message anzeigen
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.insertHtml(self._user_bubble_html(safe_message))
+        # RichFormatter eschapt automatisch - NIE doppelt escapen!
+        self.chat_display.insertHtml(self._user_bubble_html(message))
         self.db.save_message(self.current_chat, "user", message)
         self.message_input.clear()
         # WICHTIG: Inputfeld NICHT disablen - nur is_waiting_for_response Flag sperrt neue Messages
@@ -522,9 +549,12 @@ class ChatWindow(QMainWindow):
             # Speichere Message für später
             self._pending_user_message = message
             
-            # Zeige Such-Status
+            # Zeige Such-Status mit besserer Visualisierung
             self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-            self.chat_display.insertHtml(self._assistant_bubble_html('🔍 Suche im Internet...'))
+            self.chat_display.insertHtml(self._assistant_bubble_html(
+                '⏳ Suche im Internet nach relevanten Informationen...',
+                source="search"
+            ))
             self.is_waiting_for_response = True
             
             # Starte SearchWorker (asynchron, blockiert UI nicht!)
@@ -545,7 +575,8 @@ class ChatWindow(QMainWindow):
         
         if search_results.get('erfolg'):
             zusammenfassung = search_results.get('zusammenfassung', '')
-            astra_logger.info(f"✅ Suche erfolgreich: {zusammenfassung[:100]}...")
+            num_results = search_results.get('anzahl_ergebnisse', 0)
+            astra_logger.info(f"✅ Suche erfolgreich: {num_results} Ergebnisse gefunden")
             
             # Formatiere die Zusammenfassung besser für die KI
             search_context = (
@@ -554,22 +585,31 @@ class ChatWindow(QMainWindow):
                 f"[END SEARCH RESULTS]\n\n"
             )
             
-            # Entferne "Suche im Internet..." Bubble
+            # Ersetze alte Such-Bubble mit Erfolgs-Nachricht
             html = self.chat_display.toHtml()
-            html = html.replace('🔍 Suche im Internet...', '')
+            html = html.replace(
+                '⏳ Suche im Internet nach relevanten Informationen...',
+                f'✅ Suche erfolgreich - **{num_results}** Ergebnisse gefunden'
+            )
             self.chat_display.setHtml(html)
-            astra_logger.info("✅ Suche-Bubble entfernt, starte LLM...")
+            astra_logger.info("✅ Suche-Bubble aktualisiert, starte LLM...")
         else:
             # Fehler bei Suche
             error_msg = search_results.get('zusammenfassung', 'Unbekannter Fehler')
             astra_logger.warning(f"⚠️ Suche fehlgeschlagen: {error_msg}")
             
-            search_context = f"\n[SEARCH ERROR: {error_msg}]\n"
+            search_context = f"\n[SEARCH ERROR: {error_msg} - PROCEEDING WITHOUT SEARCH RESULTS]\n"
+            
+            # Ersetze alte Such-Bubble mit Fehlergrund
             html = self.chat_display.toHtml()
-            html = html.replace('🔍 Suche im Internet...', '')
+            html = html.replace(
+                '⏳ Suche im Internet nach relevanten Informationen...',
+                f'⚠️ Suche konnte nicht durchgeführt werden\n**Grund:** {error_msg}\n\nIch beantworte Ihre Frage ohne Web-Recherche.'
+            )
             self.chat_display.setHtml(html)
+            astra_logger.warning("⚠️ Suche fehlgeschlagen, starte LLM ohne Suchergebnisse...")
         
-        # Starte LLM mit Such-Ergebnissen
+        # Starte LLM mit Such-Ergebnissen (oder Fehler-Info)
         self._start_llm_request(self._pending_user_message, search_context)
     
     def on_search_error(self, error: str):
@@ -578,8 +618,12 @@ class ChatWindow(QMainWindow):
         
         astra_logger.error(f"❌ SearchWorker Error: {error}")
         
+        # Besseres Error Communication für User
         html = self.chat_display.toHtml()
-        html = html.replace('🔍 Suche im Internet...', '')
+        html = html.replace(
+            '⏳ Suche im Internet nach relevanten Informationen...',
+            f'❌ Suche konnte nicht durchgeführt werden\n**Fehler:** {error}\n\nIch beantworte Sie trotzdem, ohne Web-Recherche.'
+        )
         self.chat_display.setHtml(html)
         
         search_context = f"\n[INTERNET SEARCH FAILED: {error}]\n"
@@ -592,7 +636,10 @@ class ChatWindow(QMainWindow):
         """Startet die LLM-Anfrage mit optionalem Such-Kontext"""
         # Loading
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.insertHtml(self._assistant_bubble_html('🤖 ⏳ Im Gedanken...'))
+        self.chat_display.insertHtml(self._assistant_bubble_html(
+            '⏳ Im Gedanken... (KI generiert eine Antwort)',
+            source="llm"
+        ))
         self.is_waiting_for_response = True
         
         # Vorbereitung der Messages
@@ -630,17 +677,15 @@ class ChatWindow(QMainWindow):
             # Erster Chunk: Entferne das "Im Gedanken..." Placeholder
             self._streaming_started = True
             html = self.chat_display.toHtml()
-            # Entferne den Placeholder
-            html = html.replace('🤖 ⏳ Im Gedanken...', '')
+            # Entferne den Placeholder (suche nach der gesamten Bubble)
+            html = html.replace('⏳ Im Gedanken... (KI generiert eine Antwort)', '')
             # WICHTIG: Das aktualisierte HTML zurücksetzen
             self.chat_display.setHtml(html)
             # Initialisiere den Response Buffer
             self._current_response = ""
         
-        # Sammle den Chunk
-        from html import escape
+        # Sammle den Chunk (KEIN HTML-ESCAPING hier!)
         self._current_response += chunk
-        safe_response = escape(self._current_response)
         
         # Aktualisiere das Chat-Display mit dem bisherigen Response
         # Entferne das letzte Bubble und setze es mit dem neuen Content neu
@@ -656,7 +701,8 @@ class ChatWindow(QMainWindow):
                 html = html[:last_table_idx]
         
         # Füge ein neues Bubble mit dem aktuellen Response hinzu
-        html += self._assistant_bubble_html(safe_response)
+        # RichFormatter macht das HTML-Escaping und Formatting!
+        html += self._assistant_bubble_html(self._current_response, source="llm")
         self.chat_display.setHtml(html)
         
         # Scrolle zum Ende
@@ -682,8 +728,21 @@ class ChatWindow(QMainWindow):
         self.is_waiting_for_response = False
         self.message_input.setEnabled(True)
         
+        # Bessere Error Communication mit Details
+        error_message = f"""❌ **Fehler bei der KI-Antwort**
+
+**Fehler:** {error}
+
+**Mögliche Ursachen:**
+- Die Ollama-Verbindung ist unterbrochen
+- Das KI-Modell (`{self._selected_model}`) ist nicht verfügbar
+- Die KI hat zu lange für die Antwort gebraucht"""
+        
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.insertHtml(self._assistant_bubble_html(f'❌ {error}'))
+        self.chat_display.insertHtml(self._assistant_bubble_html(error_message, source="llm"))
+        
+        astra_logger = __import__('modules.logger', fromlist=['astra_logger']).astra_logger
+        astra_logger.error(f"❌ LLM Error: {error}")
     
     def create_new_chat(self):
         """Erstellt einen neuen Chat"""
