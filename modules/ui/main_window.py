@@ -496,7 +496,9 @@ class ChatWindow(QMainWindow):
         self.chat_display.insertHtml(self._user_bubble_html(safe_message))
         self.db.save_message(self.current_chat, "user", message)
         self.message_input.clear()
-        self.message_input.setEnabled(False)
+        # WICHTIG: Inputfeld NICHT disablen - nur is_waiting_for_response Flag sperrt neue Messages
+        # das gibt bessere UX weil Benutzer kann tippen statt auf Antwort zu warten
+        self.is_waiting_for_response = True
         
         # Auto-learn wird ASYNCHRON im Background gemacht - blockiert UI nicht
         def do_auto_learn():
