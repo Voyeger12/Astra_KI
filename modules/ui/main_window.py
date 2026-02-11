@@ -690,86 +690,33 @@ class ChatWindow(QMainWindow):
         self.llm_worker.start()
     
     def on_chunk_received(self, chunk: str):
-        """Wird aufgerufen wenn ein Text-Chunk vom LLM kommt"""
+        """Wird aufgerufen wenn ein Text-Chunk vom LLM kommt
+        PERFORMANCE: Minimal updates - nur Text sammeln, keine Rendering!
+        """
         if not self._streaming_started:
             # Erster Chunk: Entferne das "Im Gedanken..." Placeholder
             self._streaming_started = True
-            html = self.chat_display.toHtml()
-            # Entferne den Placeholder (suche nach der gesamten Bubble)
-            html = html.replace('⏳ Im Gedanken... (KI generiert eine Antwort)', '')
-            # WICHTIG: Das aktualisierte HTML zurücksetzen
-            self.chat_display.setHtml(html)
+            self.message_input.setEnabled(False)  # Disable input während Streaming
             # Initialisiere den Response Buffer
             self._current_response = ""
         
-        # Sammle den Chunk
+        # Sammle den Chunk - FERTIG!
+        # Keine HTML-Manipulation, Suche oder Neu-Rendering bei jedem Chunk
         self._current_response += chunk
-        
-        # Aktualisiere das Chat-Display mit dem bisherigen Response
-        # Entferne das letzte Bubble und setze es mit dem neuen Content neu
-        html = self.chat_display.toHtml()
-        
-        # Entferne das letzte (unvollständige) Assistant-Bubble
-        # Suche nach dem letzten <table> und entferne alles danach
-        last_table_idx = html.rfind('<table')
-        if last_table_idx != -1:
-            last_table_end = html.rfind('</table>') + len('</table>')
-            if last_table_end > last_table_idx:
-                # Entferne das letzte Bubble
-                html = html[:last_table_idx]
-        
-        # Füge ein neues Bubble mit dem aktuellen Response hinzu
-        # PERFORMANCE FIX: Nur Simple HTML Bubble während Streaming (kein RichFormatter!)
-        # RichFormatter wird erst am Ende in on_response_received() aufgerufen
-        html += self._simple_assistant_bubble_html(self._current_response)
-        self.chat_display.setHtml(html)
-        
-        # Scrolle zum Ende
-        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.ensureCursorVisible()
-    
-    def _simple_assistant_bubble_html(self, text: str) -> str:
-        """
-        Einfache Bubble OHNE RichFormatter (nur für Streaming)
-        RichFormatter wird erst am Ende aufgerufen
-        """
-        from html import escape
-        safe_text = escape(text)
-        text_color = COLORS['text']
-        primary_color = COLORS['primary']
-        html = (
-            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-            f'<td align="left" style="padding:8px 4px;">'
-            f'<div style="display:inline-block;background:#2a2a2a;color:{text_color};border-radius:20px;padding:12px 18px;margin:8px 4px;border:2px solid {primary_color};max-width:85%;word-wrap:break-word;font-size:{self.current_text_size}pt;box-shadow:0 2px 8px rgba(0,0,0,0.5);">'
-            f'{safe_text}'
-            '</div>'
-            '</td>'
-            '<td width="10%"></td>'
-            '</tr></table>'
-        )
-        return html
+
     
     def on_response_received(self, response: str):
-        """Wird aufgerufen wenn die komplette Antwort fertig ist"""
+        """Wird aufgerufen wenn die komplette Antwort fertig ist
+        PERFORMANCE: Nur EINMAL formatting + rendering am Ende!
+        """
         self.is_waiting_for_response = False
         self.message_input.setEnabled(True)
         self._streaming_started = False
         
-        # PERFORMANCE FIX: RichFormatter ERST hier aufrufen, nicht bei jedem Chunk!
-        # Das erspart uns hunderte Format-Calls während dem Streaming
-        html = self.chat_display.toHtml()
-        
-        # Entferne das letzte (jetzt vollständige) Simple-Assistant-Bubble
-        last_table_idx = html.rfind('<table')
-        if last_table_idx != -1:
-            last_table_end = html.rfind('</table>') + len('</table>')
-            if last_table_end > last_table_idx:
-                # Entferne das letzte Bubble
-                html = html[:last_table_idx]
-        
-        # Ersetze mit vollständig formatiertem Bubble (mit RichFormatter)
-        html += self._assistant_bubble_html(response, source="llm")
-        self.chat_display.setHtml(html)
+        # PERFORMANCE: Nutze insertHtml() statt setHtml() um nur den neuen Content zu appenden
+        # Das erspart uns rfind()-Suche und komplette HTML-Neu-Rendering!
+        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
+        self.chat_display.insertHtml(self._assistant_bubble_html(response, source="llm"))
         
         # Memory & speichern
         memory_texts = self.memory_manager.extract_memory_from_response(response)
@@ -779,6 +726,10 @@ class ChatWindow(QMainWindow):
         
         clean_response = self.memory_manager.remove_tags_from_response(response)
         self.db.save_message(self.current_chat, "assistant", clean_response)
+        
+        # Scrolle zum Ende
+        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
+        self.chat_display.ensureCursorVisible()
     
     def on_response_error(self, error: str):
         """Wird aufgerufen bei Fehler"""
