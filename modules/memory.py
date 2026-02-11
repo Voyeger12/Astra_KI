@@ -55,6 +55,7 @@ class MemoryManager:
     def extract_personal_info(self, text: str) -> dict:
         """
         Extrahiert automatisch persönliche Informationen aus Text
+        SMART: Sucht nach Patterns + Fallback zu Name/Alter Extraction
         
         Args:
             text: Der zu analysierende Text
@@ -62,18 +63,54 @@ class MemoryManager:
         Returns:
             Dict mit extrahierten Informationen {category: (value, type)}
         """
+        # ✅ NORMALISIERUNG: Entferne Fluff-Worte am Anfang
+        # "dir das ich" → "ich" | "also" → "" | "hey" → ""
+        # Pattern: Entferne ALLES VOR dem ersten "ich/mein/my/i'm" etc  
+        text_clean = re.sub(r'^.*?\b(ich|mein|my|i am|i\'m|i\'ve)\b', r'\1', text, flags=re.IGNORECASE)
+        
         extracted = {}
         
         for pattern, (category, info_type) in self.MEMORY_PATTERNS.items():
-            matches = re.finditer(pattern, text, re.IGNORECASE)
-            for match in matches:
-                if category not in extracted:  # Nur erste Übereinstimmung
-                    value = match.group(1).strip() if match.lastindex else match.group(0).strip()
-                    if value and len(value) > 1:
-                        extracted[category] = {
-                            "value": value,
-                            "type": info_type
-                        }
+            # Try both original and cleaned text
+            for search_text in [text_clean, text]:  # Try cleaned first, then original
+                matches = re.finditer(pattern, search_text, re.IGNORECASE)
+                for match in matches:
+                    if category not in extracted:  # Nur erste Übereinstimmung
+                        value = match.group(1).strip() if match.lastindex else match.group(0).strip()
+                        if value and len(value) > 1:
+                            extracted[category] = {
+                                "value": value,
+                                "type": info_type
+                            }
+                    if category in extracted:  # Break inner loop if found
+                        break
+                if category in extracted:  # Break middle loop if found
+                    break
+        
+        # ✅ FALLBACK: Wenn patterns nichts finden, nutze Heuristiken
+        # Fall: "ich [Name] [number] Jahre" → Extract Name + Age
+        if not extracted:
+            text_clean_lower = text_clean.lower()
+            
+            # Age fallback: Find number + "jahr/year/alt"
+            age_match = re.search(r'(\d+)\s+(?:jahr|Jahre|years|year|alt)', text_clean_lower)
+            if age_match:
+                extracted["age"] = {
+                    "value": age_match.group(1),
+                    "type": "personal"
+                }
+            
+            # Name fallback: Nach "ich " das erste Wort (egal gross/klein)
+            # Konvertiere zu Capitalized form: "duncan" → "Duncan"
+            name_match = re.search(r'ich\s+(\w+)', text_clean_lower)
+            if name_match:
+                name_value = name_match.group(1)
+                # Capitalize: "duncan" → "Duncan"
+                name_value = name_value.capitalize()
+                extracted["name"] = {
+                    "value": name_value,
+                    "type": "personal"
+                }
         
         return extracted
     
@@ -237,11 +274,23 @@ class MemoryManager:
         Returns:
             True bei Erfolg
         """
-        # Versuche zu kategorisieren
-        category = self._infer_category(information)
+        # ✅ WICHTIG: Versuche Info mit PATTERNS zu extrahieren
+        extracted = self.extract_personal_info(information)
         
-        # Speichere mit Kategorie
-        return self.db.add_memory(information, category)
+        if extracted:
+            # Wir have strukturierte Einträge - speichere sie formatiert
+            saved_any = False
+            for category, info in extracted.items():
+                value = info["value"]
+                if value and len(value) > 1:
+                    formatted = self._format_memory(category, value)
+                    if self.db.add_memory(formatted, info["type"]):
+                        saved_any = True
+            return saved_any
+        else:
+            # Fallback: Keine Patterns gefunden - kategorisiere und speichere direkt
+            category = self._infer_category(information)
+            return self.db.add_memory(information, category)
     
     def _infer_category(self, text: str) -> str:
         """Versucht die beste Kategorie für die Information zu erraten"""

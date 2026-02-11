@@ -499,12 +499,30 @@ class ChatWindow(QMainWindow):
         if message.lower().startswith("merke"):
             memory_text = message[5:].strip()
             if memory_text:
+                # ✅ SMART LEARN: Extrahiert und bei Patterns anzeigen
+                # Extrahiere Personal Info BEVOR gespeichert wird
+                extracted = self.memory_manager.extract_personal_info(memory_text)
                 self.memory_manager.smart_learn(memory_text)
+                
+                # Formattiere die Anzeige basierend auf extrahierten Werte
+                if extracted:
+                    # Show strukturierte Werte wenn vorhanden
+                    formatted_items = []
+                    for category, info in extracted.items():
+                        value = info["value"]
+                        # Nutze _format_memory für konsistente Formatting
+                        formatted = self.memory_manager._format_memory(category, value)
+                        formatted_items.append(formatted)
+                    
+                    display_text = " | ".join(formatted_items)
+                else:
+                    # Fallback: Zeige den rohen Text
+                    display_text = memory_text
                 
                 html_content = self.chat_display.toHtml()
                 # RichFormatter eschapt automatisch, nicht doppelt escapen!
                 user_bubble = self._user_bubble_html(message)
-                success_bubble = self._assistant_bubble_html(f"✅ Gespeichert! Ich merke mir: {memory_text}", source="memory", confidence=0.95)
+                success_bubble = self._assistant_bubble_html(f"✅ Gespeichert! Ich merke mir: {display_text}", source="memory", confidence=0.95)
 
                 if '</body>' in html_content:
                     html_content = html_content.replace('</body>', user_bubble + success_bubble + '</body>')
@@ -513,7 +531,7 @@ class ChatWindow(QMainWindow):
 
                 self.chat_display.setHtml(html_content)
                 self.db.save_message(self.current_chat, "user", message)
-                self.db.save_message(self.current_chat, "assistant", f"✅ Gespeichert! Ich merke mir: {memory_text}")
+                self.db.save_message(self.current_chat, "assistant", f"✅ Gespeichert! Ich merke mir: {display_text}")
                 self.message_input.clear()
                 return
         
