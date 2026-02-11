@@ -195,7 +195,7 @@ class SearchEngine:
             
             # Versuche DuckDuckGo mit neuem Paket
             try:
-                from ddgs import DDGS  # Neu: ddgs statt duckduckgo_search!
+                from ddgs import DDGS  # type: ignore  # Neu: ddgs statt duckduckgo_search!
                 astra_logger.info(f"📡 Nutze DuckDuckGo API (ddgs)...")
                 
                 ddgs = DDGS(timeout=15)
@@ -214,7 +214,7 @@ class SearchEngine:
             except ImportError as import_error:
                 astra_logger.warning(f"⚠️ Paket 'ddgs' nicht gefunden, versuche altes Paket...")
                 try:
-                    from duckduckgo_search import DDGS  # Fallback zu altem Paket
+                    from duckduckgo_search import DDGS  # type: ignore  # Fallback zu altem Paket
                     astra_logger.info(f"📡 Nutze DuckDuckGo API (duckduckgo_search - veraltet)...")
                     
                     ddgs = DDGS(timeout=15, proxies=None)
