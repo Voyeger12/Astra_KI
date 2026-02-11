@@ -23,7 +23,11 @@ __pycache__/
 # OS-Dateien
 .DS_Store
 Thumbs.db
-
+# Build-Ordner (PyInstaller, etc.)
+dist/
+build/
+*.exe
+*.spec
 # Benutzerspezifische Konfiguration
 persona.txt
 config/settings.json
