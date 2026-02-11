@@ -2,6 +2,9 @@
 logs/
 data/*.db
 data/backups/
+*.db
+*.db-shm
+*.db-wal
 *.log
 
 # System-Dateien
