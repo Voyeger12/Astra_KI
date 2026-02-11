@@ -18,13 +18,21 @@ class MemoryManager:
     # Patterns für automatische Memory-Erkennung (Deutsch + Englisch)
     # WICHTIG: [\w\s\-äöüÄÖÜß] erlaubt Umlaute und Wörter mit Bindestrichen
     MEMORY_PATTERNS = {
-        r"(?:ich hei[ß]e|mein name ist|ich bin|i am|my name is|call me)\s+([\w\-äöüÄÖÜß]+)": ("name", "personal"),
+        # NAME: Nur eindeutige Patterns für Namen (nicht "ich bin" - zu viel Noise!)
+        r"(?:ich hei[ß]e|mein name ist|my name is|call me)\s+([A-Z][a-zäöüß\-]*(?:\s+[A-Z][a-zäöüß\-]*)*)": ("name", "personal"),
+        # AGE: "ich bin X Jahre alt"
         r"(?:ich bin|i am|i\'m)\s+(\d+)\s+(?:jahr|Jahre|years|year)(?:\s+alt)?": ("age", "personal"),
+        # LOCATION: "ich lebe/wohne in X"
         r"(?:ich lebe|ich wohne|i live|i\'m from)\s+(?:in\s+)?([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("location", "personal"),
+        # LIKES: "ich mag X"
         r"(?:ich mag|i like|i love|mein lieblings|my favorite|my favorit)\s+([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|und|$)": ("likes", "personal"),
+        # RELATIONSHIP: "ich bin verheiratet/single/..."
         r"(?:ich bin|i\'m|i am)\s+(?:verheiratet|married|ledig|single|in einer beziehung|in a relationship|verlobt)": ("relationship", "personal"),
+        # PROFESSION: "ich mache/studiere X als Y"
         r"(?:ich mache|ich mach|i\'m doing|i do|i\'m studying|ich studiere)\s+(?:eine\s+)?(?:umschulung\s+)?(?:als\s+)?([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("profession", "personal"),
+        # HOBBIES: "meine hobbys sind X, Y, Z"
         r"(?:meine hobbys|my hobbies|meine interessen|my interests|meine hobby|meine hobby)\s+(?:sind\s+)?([\w\s,\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("hobbies", "personal"),
+        # CREATOR: "du bist von X erschaffen"
         r"(?:du bist|you are|you\'re)\s+(?:von|from)?\s+([\w\s\-äöüÄÖÜß]+?)\s+(?:erschaffen|created|gebaut|built)": ("creator", "personal"),
     }
     
