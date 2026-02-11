@@ -223,7 +223,7 @@ class Database:
                     now = datetime.now().isoformat()
                     cursor.execute(
                         "INSERT INTO chats (name, created_at, updated_at) VALUES (?, ?, ?)",
-                        (name, now, now) if 'name' in locals() else (chat_name, now, now)
+                        (chat_name, now, now)
                     )
                     conn.commit()
                     chat_id = cursor.lastrowid
