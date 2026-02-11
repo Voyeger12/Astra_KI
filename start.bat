@@ -8,10 +8,10 @@ echo.
 echo [START] ASTRA AI - Neural Intelligence
 echo =========================================================
 echo Features:
-echo   • Hybrid Memory mit Confidence-Scoring
-echo   • Rich Markdown + Code-Highlighting
-echo   • Intelligente Error Communication
-echo   • Rate-Limiting & Crash-Recovery
+echo   - Hybrid Memory mit Confidence-Scoring
+echo   - Rich Markdown + Code-Highlighting
+echo   - Intelligente Error Communication
+echo   - Rate-Limiting und Crash-Recovery
 echo.
 
 REM Prüfe Python
