@@ -436,6 +436,10 @@ class ChatWindow(QMainWindow):
         html_parts.append('</body></html>')
         self.chat_display.setHtml(''.join(html_parts))
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
+        
+        # CRITICAL FIX: Stelle sicher dass das Eingabefeld aktiviert ist
+        self.message_input.setEnabled(True)
+        self.is_waiting_for_response = False
     
     def send_message(self):
         """Sendet eine Nachricht an Astra"""
@@ -494,19 +498,22 @@ class ChatWindow(QMainWindow):
         self.message_input.clear()
         self.message_input.setEnabled(False)
         
-        # Auto-learn
-        saved_info = self.memory_manager.auto_learn_from_message(message)
-        if saved_info:
-            saved_items = ", ".join([f"{cat}" for cat, val in saved_info])
-            html_content = self.chat_display.toHtml()
-            info_bubble = self._assistant_bubble_html(f'💾 Info gespeichert: {saved_items}')
-
-            if '</body>' in html_content:
-                html_content = html_content.replace('</body>', info_bubble + '</body>')
-            else:
-                html_content += info_bubble
-
-            self.chat_display.setHtml(html_content)
+        # Auto-learn wird ASYNCHRON im Background gemacht - blockiert UI nicht
+        def do_auto_learn():
+            """Background: Auto-Learn für Memory"""
+            try:
+                saved_info = self.memory_manager.auto_learn_from_message(message)
+                if saved_info:
+                    saved_items = ", ".join([f"{cat}" for cat, val in saved_info])
+                    # Zeige Info nur wenn etwas gelernt wurde (optional)
+                    # (Kommentiert aus um UI zu beschleunigen)
+            except Exception:
+                pass  # Fehler beim Background-Lernen ignorieren
+        
+        # Starte Background-Thread für Auto-Learn
+        from threading import Thread
+        learn_thread = Thread(target=do_auto_learn, daemon=True)
+        learn_thread.start()
         
         # === ASYNCHRONE INTERNET SEARCH INTEGRATION ===
         if SearchEngine.needs_search(message):
