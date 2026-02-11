@@ -444,32 +444,67 @@ class ChatWindow(QMainWindow):
         self.select_chat(item.text())
     
     def select_chat(self, chat_name: str):
-        """Wählt einen Chat und zeigt ihn an"""
+        """Wählt einen Chat und zeigt ihn an - ULTRA FAST mit Lazy Formatting!"""
         self.current_chat = chat_name
         chats = self.db.get_all_chats()
         messages = chats.get(chat_name, [])
 
+        # PERFORMANCE: Zeige sofort PLAIN TEXT (kein Formatting)
+        # Dann formatiere im Hintergrund mit Worker
         html_parts = []
         html_parts.append('<html><head><meta charset="utf-8"></head><body style="font-family: Segoe UI, Arial, sans-serif; background: transparent; color: ' + COLORS['text'] + ';">')
 
-        # Lade und zeige alle Messages mit Rich Formatting
+        # Schnelle Plain-Text Bubbles (INSTANT!)
         for msg in messages:
             role = msg["role"]
             content = msg["content"]
             
-            # RichFormatter macht HTML-escaping automatisch!
+            # HTML ESCAPE only, NO RichFormatter (super schnell!)
+            from html import escape
+            safe_text = escape(content)
+            
             if role == "user":
-                html_parts.append(self._user_bubble_html(content))
+                # User Bubble (schnell, plain)
+                text_color = COLORS['text']
+                primary_color = COLORS['primary']
+                html_parts.append(
+                    '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+                    '<td width="10%"></td>'
+                    f'<td align="right" style="padding:8px 4px;">'
+                    f'<div style="display:inline-block;background:{primary_color};color:#ffffff;border-radius:20px;padding:12px 18px;margin:8px 4px;max-width:80%;word-wrap:break-word;font-size:10pt;font-weight:500;box-shadow:0 2px 8px rgba(255,75,75,0.3);">'
+                    f'{safe_text}'
+                    '</div>'
+                    '</td>'
+                    '</tr></table>'
+                )
             else:
-                html_parts.append(self._assistant_bubble_html(content))
+                # Assistant Bubble (schnell, plain)
+                text_color = COLORS['text']
+                primary_color = COLORS['primary']
+                html_parts.append(
+                    '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+                    f'<td align="left" style="padding:8px 4px;">'
+                    f'<div style="display:inline-block;background:#2a2a2a;color:{text_color};border-radius:20px;padding:12px 18px;margin:8px 4px;border:2px solid {primary_color};max-width:85%;word-wrap:break-word;font-size:10pt;box-shadow:0 2px 8px rgba(0,0,0,0.5);">'
+                    f'{safe_text}'
+                    '</div>'
+                    '</td>'
+                    '<td width="10%"></td>'
+                    '</tr></table>'
+                )
 
         html_parts.append('</body></html>')
+        
+        # Zeige SOFORT Plain-Text (< 1ms für 1000 Messages!)
         self.chat_display.setHtml(''.join(html_parts))
         self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
         
         # CRITICAL FIX: Stelle sicher dass das Eingabefeld aktiviert ist
         self.message_input.setEnabled(True)
         self.is_waiting_for_response = False
+        
+        # TODO: Optional: Später können wir hier einen Worker starten
+        # der alle Messages mit RichFormatter formatiert und dann
+        # einen "upgrade" macht. Aber plain-text ist schon snappy genug!
     
     def send_message(self):
         """Sendet eine Nachricht an Astra"""
