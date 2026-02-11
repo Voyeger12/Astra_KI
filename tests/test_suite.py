@@ -296,6 +296,81 @@ class AstraTestSuite:
         self.results["search_logic"] = result
         return result
     
+    # ===== MEMORY EXTRACTION TESTS =====
+    def test_memory_extraction_fixing(self) -> TestResult:
+        """Test dass smart_learn die Info extrahiert und formatiert"""
+        result = TestResult("Memory Extraction - Fixing")
+        
+        try:
+            # Test: User sagt "dir das ich duncan Heiße und 30 jahre alt bin"
+            message = "dir das ich duncan Heiße und 30 jahre alt bin"
+            
+            extracted = self.memory_manager.extract_personal_info(message)
+            
+            # Check for age
+            if "age" in extracted and extracted["age"]["value"] == "30":
+                result.add_pass()
+                log_debug("✓ Age extraction successful", "MEM_EXTRACT_TEST")
+            else:
+                result.add_fail("Age extraction failed")
+            
+            # Check for name
+            if "name" in extracted and extracted["name"]["value"].lower() == "duncan":
+                result.add_pass()
+                log_debug("✓ Name extraction successful", "MEM_EXTRACT_TEST")
+            else:
+                result.add_fail("Name extraction failed")
+            
+        except Exception as e:
+            result.add_fail(f"Exception: {e}")
+            log_error(f"Memory extraction test failed: {e}", "MEM_EXTRACT_TEST", e)
+        
+        self.results["memory_extraction_fixing"] = result
+        return result
+    
+    def test_memory_extraction_robustness(self) -> TestResult:
+        """Test verschiedene Input-Varianten (14 edge cases)"""
+        result = TestResult("Memory Extraction - Robustness (14 Cases)")
+        
+        test_cases = [
+            ("ich heiße Duncan", ["name"]),
+            ("mein name ist Duncan", ["name"]),
+            ("ich bin 30 jahre alt", ["age"]),
+            ("dir das ich duncan Heiße und 30 jahre alt bin", ["name", "age"]),
+            ("ich heiße Müller und bin 25 Jahre alt", ["name", "age"]),
+            ("my name is John", ["name"]),
+            ("i am 40 years old", ["age"]),
+            ("also ich bin Sarah und 35 Jahre alt", ["name", "age"]),
+            ("hey ich lebe in Berlin", ["location"]),
+            ("meine hobbys sind lesen und programmieren", ["hobbies"]),
+            ("ich mag Pizza und Sushi", ["likes"]),
+            ("mal schauen ob ich alice heiße", ["name"]),
+            ("ich bin verheiratet", ["relationship"]),
+            ("ich studiere Informatik", ["profession"]),
+        ]
+        
+        try:
+            for message, expected_keys in test_cases:
+                extracted = self.memory_manager.extract_personal_info(message)
+                extracted_keys = list(extracted.keys())
+                
+                # Check if all expected keys are in extracted
+                success = all(key in extracted_keys for key in expected_keys)
+                
+                if success:
+                    result.add_pass()
+                    log_debug(f"✓ {message[:40]}", "MEM_ROBUST_TEST")
+                else:
+                    result.add_fail(f"Input: {message!r} | Expected: {expected_keys}, Got: {extracted_keys}")
+                    log_debug(f"✗ {message!r}", "MEM_ROBUST_TEST")
+        
+        except Exception as e:
+            result.add_fail(f"Exception: {e}")
+            log_error(f"Memory robustness test failed: {e}", "MEM_ROBUST_TEST", e)
+        
+        self.results["memory_extraction_robustness"] = result
+        return result
+    
     # ===== REPORT GENERATION =====
     def run_all_tests(self) -> None:
         """Führt alle Tests aus"""
@@ -309,6 +384,8 @@ class AstraTestSuite:
         self.test_memory_auto_learn()
         self.test_memory_system_prompt()
         self.test_memory_clear()
+        self.test_memory_extraction_fixing()
+        self.test_memory_extraction_robustness()
         self.test_text_utils()
         self.test_search_logic()
         
