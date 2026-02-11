@@ -1,14 +1,14 @@
-# ASTRA 2.0 - AI Chat Assistant
+# ASTRA v0.2 - AI Chat Assistant
 
 Intelligente Chat-Anwendung mit lokalem LLM (Ollama), **Live Internet-Suche**, Auto-Learning und Langzeitgedächtnis.
 Production-ready mit Sicherheit, Fehlerbehandlung und umfassenden Tests.
 
-### Aktuell (v2.0)
+### Aktuell (v0.2 Pre-Release)
 - ✨ Internet-Suche mit DuckDuckGo (asynchron, non-blocking)
 - 🚀 Intelligente Zusammenfassungen für Wetter, Nachrichten, Preise
 - 🎯 KI antwortet mit echten, aktuellen Daten
 - 📊 Streaming-Output vom LLM (Text kommt in Echtzeit)
-- 🔐 Sicherheit & Robustheit auf Production-Level
+- 🔐 Sicherheit & Robustheit auf Beta-Level
 
 ## Installation
 
@@ -67,7 +67,7 @@ python tests/test_suite.py
 python tests/runner.py
 ```
 
-## Internet-Suche (v2.0 Feature)
+## Internet-Suche (v0.2 Feature)
 
 Die KI kann jetzt **automatisch im Internet suchen** für aktuelle Informationen!
 
