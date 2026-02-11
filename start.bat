@@ -7,7 +7,11 @@ REM =========================================================
 echo.
 echo [START] ASTRA AI - Neural Intelligence
 echo =========================================================
-echo Features: Hybrid Memory, Rate-Limiting, Crash-Recovery
+echo Features:
+echo   • Hybrid Memory mit Confidence-Scoring
+echo   • Rich Markdown + Code-Highlighting
+echo   • Intelligente Error Communication
+echo   • Rate-Limiting & Crash-Recovery
 echo.
 
 REM Prüfe Python
@@ -64,7 +68,7 @@ if errorlevel 1 (
 REM Starte Anwendung
 echo.
 echo [START] Starte ASTRA AI...
-echo [INFO] Mit Hybrid Memory, Rate-Limiting und Crash-Recovery
+echo [INFO] v0.2 Production-Ready mit allen Features
 echo.
 python main.py
 
