@@ -570,6 +570,11 @@ class ChatWindow(QMainWindow):
         self.llm_worker.finished.connect(self.on_response_received)
         self.llm_worker.error.connect(self.on_response_error)
         self.llm_worker.start()
+    
+    def on_chunk_received(self, chunk: str):
+        """Wird aufgerufen wenn ein Text-Chunk vom LLM kommt"""
+        if not self._streaming_started:
+            # Erster Chunk: Entferne das "Im Gedanken..." Placeholder
             self._streaming_started = True
             html = self.chat_display.toHtml()
             # Entferne den Placeholder
