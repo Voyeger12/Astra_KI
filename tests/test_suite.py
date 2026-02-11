@@ -258,6 +258,44 @@ class AstraTestSuite:
         self.results["utils"] = result
         return result
     
+    def test_search_logic(self) -> TestResult:
+        """Testet intelligente Search-Erkennungslogik"""
+        result = TestResult("Search Logic")
+        
+        try:
+            from modules.utils import SearchEngine
+            
+            # Test-Cases: (message, should_search, description)
+            search_tests = [
+                # Sollten NICHT suchen
+                ("Hey wie geht es dir Das mit dem wetter hast du gut gesucht", False, "Smalltalk mit Wetter"),
+                ("Danke das du mir helfen willst mir geht es soweit gut ich bin gerade in Essen", False, "Aussage mit Location"),
+                ("Wie geht es dir heute?", False, "Persönliche Frage"),
+                ("Ich mag Wetter und Regen", False, "Aussage, keine Frage"),
+                # Sollten suchen
+                ("Wie ist das Wetter in München?", True, "Wetter-Frage"),
+                ("Wie ist die aktuelle Temperatur?", True, "Temperatur-Frage"),
+                ("Gibt es aktuelle Nachrichten?", True, "Nachrichten-Frage"),
+                ("Wie ist Bitcoin Kurs?", True, "Bitcoin-Frage"),
+            ]
+            
+            for message, expected_search, description in search_tests:
+                actual_search = SearchEngine.needs_search(message)
+                
+                if actual_search == expected_search:
+                    result.add_pass()
+                    log_debug(f"✓ {description}: {actual_search}", "SEARCH_LOGIC_TEST")
+                else:
+                    result.add_fail(f"{description}: Expected {expected_search}, got {actual_search}")
+                    log_debug(f"✗ {description}: Expected {expected_search}, got {actual_search}", "SEARCH_LOGIC_TEST")
+        
+        except Exception as e:
+            result.add_fail(f"Search Logic Error: {e}")
+            log_error(f"Search Logic Test failed: {e}", "SEARCH_LOGIC_TEST", e)
+        
+        self.results["search_logic"] = result
+        return result
+    
     # ===== REPORT GENERATION =====
     def run_all_tests(self) -> None:
         """Führt alle Tests aus"""
@@ -272,6 +310,7 @@ class AstraTestSuite:
         self.test_memory_system_prompt()
         self.test_memory_clear()
         self.test_text_utils()
+        self.test_search_logic()
         
         # Zeige Resultate
         total_passed = 0
