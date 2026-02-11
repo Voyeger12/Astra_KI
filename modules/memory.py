@@ -16,15 +16,16 @@ class MemoryManager:
     """Verwaltet Memory und System-Prompts mit intelligenter Auto-Erkennung"""
     
     # Patterns für automatische Memory-Erkennung (Deutsch + Englisch)
+    # WICHTIG: [\w\s\-äöüÄÖÜß] erlaubt Umlaute und Wörter mit Bindestrichen
     MEMORY_PATTERNS = {
-        r"(?:ich hei[ß]e|mein name ist|ich bin|i am|my name is|call me)\s+([A-Z][a-z]+)": ("name", "personal"),
+        r"(?:ich hei[ß]e|mein name ist|ich bin|i am|my name is|call me)\s+([\w\-äöüÄÖÜß]+)": ("name", "personal"),
         r"(?:ich bin|i am|i\'m)\s+(\d+)\s+(?:jahr|Jahre|years|year)(?:\s+alt)?": ("age", "personal"),
-        r"(?:ich lebe|ich wohne|i live|i\'m from)\s+(?:in\s+)?([A-Za-z\s]+?)(?:\.|,|!|$)": ("location", "personal"),
-        r"(?:ich mag|i like|i love|mein lieblings|my favorite|my favorit)\s+([A-Za-z\s]+?)(?:\.|,|!|und|$)": ("likes", "personal"),
+        r"(?:ich lebe|ich wohne|i live|i\'m from)\s+(?:in\s+)?([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("location", "personal"),
+        r"(?:ich mag|i like|i love|mein lieblings|my favorite|my favorit)\s+([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|und|$)": ("likes", "personal"),
         r"(?:ich bin|i\'m|i am)\s+(?:verheiratet|married|ledig|single|in einer beziehung|in a relationship|verlobt)": ("relationship", "personal"),
-        r"(?:ich mache|ich mach|i\'m doing|i do|i\'m studying|ich studiere)\s+(?:eine\s+)?(?:umschulung\s+)?(?:als\s+)?([A-Za-z\s]+?)(?:\.|,|!|$)": ("profession", "personal"),
-        r"(?:meine hobbys|my hobbies|meine interessen|my interests|meine hobby|meine hobby)\s+(?:sind\s+)?([A-Za-z\s,]+?)(?:\.|,|!|$)": ("hobbies", "personal"),
-        r"(?:du bist|you are|you\'re)\s+(?:von|from)?\s+([A-Za-z\s]+?)\s+(?:erschaffen|created|gebaut|built)": ("creator", "personal"),
+        r"(?:ich mache|ich mach|i\'m doing|i do|i\'m studying|ich studiere)\s+(?:eine\s+)?(?:umschulung\s+)?(?:als\s+)?([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("profession", "personal"),
+        r"(?:meine hobbys|my hobbies|meine interessen|my interests|meine hobby|meine hobby)\s+(?:sind\s+)?([\w\s,\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("hobbies", "personal"),
+        r"(?:du bist|you are|you\'re)\s+(?:von|from)?\s+([\w\s\-äöüÄÖÜß]+?)\s+(?:erschaffen|created|gebaut|built)": ("creator", "personal"),
     }
     
     def __init__(self, db: Database):
