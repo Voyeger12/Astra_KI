@@ -51,9 +51,21 @@ def build_exe():
         "--icon=ASTRA.ico" if (app_dir / "ASTRA.ico").exists() else "",
         f"--distpath={dist_dir}",
         f"--workpath={build_dir}",
+        # PyQt6 Hidden Imports
         "--hidden-import=PyQt6.QtPrintSupport",
         "--hidden-import=PyQt6.QtSvg",
         "--collect-all=PyQt6",
+        # Internet Search Dependencies
+        "--hidden-import=ddgs",
+        "--hidden-import=requests",
+        "--collect-all=ddgs",
+        "--collect-all=requests",
+        # Datenbank & Logging
+        "--hidden-import=sqlite3",
+        "--hidden-import=logging",
+        # Fallback für altes Paket (falls noch entfernt nicht werden kann)
+        "--hidden-import=duckduckgo_search",
+        # Module
         str(app_dir / "main.py")
     ]
     
