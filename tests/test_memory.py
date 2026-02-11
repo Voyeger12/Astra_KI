@@ -8,6 +8,7 @@ Tests für Memory-Extraction, Formatierung und Robustheit
 import sys
 import tempfile
 from pathlib import Path
+from typing import Dict
 
 # Add modules to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
