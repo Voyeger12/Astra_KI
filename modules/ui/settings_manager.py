@@ -35,6 +35,8 @@ class SettingsManager:
             'search_enabled': True,
             'memory_enabled': True,
             'selected_model': default_model,
+            'temperature': 0.7,  # LLM Kreativität (0.0-1.0)
+            'max_retries': 3,    # Ollama Verbindungs-Retries
         }
         
         self.settings = self._load_settings()

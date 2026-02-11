@@ -188,6 +188,39 @@ class SettingsDialog(QDialog):
         )
         inner.addWidget(self.memory_check)
         
+        # Temperature-Regler
+        temp_label = QLabel("🌡️ KI-Kreativität (Temperature):")
+        temp_label.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 10pt; margin-top: 16px;")
+        inner.addWidget(temp_label)
+        
+        temp_layout = QHBoxLayout()
+        self.temp_slider = QSlider(Qt.Orientation.Horizontal)
+        self.temp_slider.setMinimum(0)
+        self.temp_slider.setMaximum(100)
+        temp_value = int(self.settings_manager.get('temperature', 0.7) * 100)
+        self.temp_slider.setValue(temp_value)
+        self.temp_slider.setStyleSheet(
+            f"QSlider::groove:horizontal {{ background: {COLORS['primary']}; height: 6px; margin: 0px; }}"
+            f"QSlider::handle:horizontal {{ background: {COLORS['accent']}; width: 16px; margin: -5px 0px; border-radius: 8px; }}"
+        )
+        
+        self.temp_value_label = QLabel(f"{self.temp_slider.value()/100:.2f}")
+        self.temp_value_label.setStyleSheet(f"color: {COLORS['accent']}; font-weight: bold; width: 40px;")
+        
+        def update_temp():
+            value = self.temp_slider.value() / 100
+            self.temp_value_label.setText(f"{value:.2f}")
+            self.settings_manager.set('temperature', value)
+        
+        self.temp_slider.valueChanged.connect(update_temp)
+        temp_layout.addWidget(self.temp_slider)
+        temp_layout.addWidget(self.temp_value_label)
+        inner.addLayout(temp_layout)
+        
+        temp_info = QLabel("0 = Präzise, 1.0 = Kreativ")
+        temp_info.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 9pt; font-style: italic;")
+        inner.addWidget(temp_info)
+        
         layout.addWidget(frame)
         layout.addStretch()
         

@@ -603,10 +603,12 @@ class ChatWindow(QMainWindow):
         
         # Start LLM-STREAMING Worker
         selected_model = getattr(self, '_selected_model', DEFAULT_MODEL)
+        temperature = self.settings_manager.get('temperature', 0.7)
         self.llm_worker = LLMStreamWorker(
             self.ollama,
             selected_model,
-            messages
+            messages,
+            temperature
         )
         self.llm_worker.chunk_received.connect(self.on_chunk_received)
         self.llm_worker.finished.connect(self.on_response_received)

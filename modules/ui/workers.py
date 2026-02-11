@@ -39,17 +39,18 @@ class LLMStreamWorker(QThread):
     finished = pyqtSignal(str)         # Komplette Antwort
     error = pyqtSignal(str)
     
-    def __init__(self, ollama: OllamaClient, model: str, messages: List[Dict]):
+    def __init__(self, ollama: OllamaClient, model: str, messages: List[Dict], temperature: float = 0.7):
         super().__init__()
         self.ollama = ollama
         self.model = model
         self.messages = messages
+        self.temperature = temperature
         self.full_response = ""
     
     def run(self):
         try:
-            # Nutze die neue streaming Methode
-            for chunk in self.ollama.chat_stream(self.model, self.messages):
+            # Nutze die neue streaming Methode mit Temperature
+            for chunk in self.ollama.chat_stream(self.model, self.messages, self.temperature):
                 if chunk:
                     self.full_response += chunk
                     self.chunk_received.emit(chunk)  # Emit jeden Chunk sofort!

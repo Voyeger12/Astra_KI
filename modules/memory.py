@@ -120,11 +120,28 @@ class MemoryManager:
     def get_system_prompt(self) -> str:
         """
         Generiert den System-Prompt mit integriertem Memory
+        Lädt optional persona.txt wenn vorhanden
         
         Returns:
             Vollständiger System-Prompt für die KI
         """
+        from pathlib import Path
+        
         memory = self.get_memory_string()
+        
+        # Versuche persona.txt zu laden (optional, Benutzer-Konfigurierbar)
+        persona_path = Path(__file__).parent.parent / "persona.txt"
+        if persona_path.exists():
+            try:
+                with open(persona_path, 'r', encoding='utf-8') as f:
+                    persona_content = f.read()
+                    # Ersetze {wissen} Platzhalter mit Memory
+                    return persona_content.format(wissen=memory)
+            except Exception:
+                # Fallback auf Standard-Template
+                pass
+        
+        # Fallback auf Standard SYSTEM_PROMPT_TEMPLATE
         return SYSTEM_PROMPT_TEMPLATE.format(memory=memory)
     
     def extract_memory_from_response(self, text: str) -> list:
