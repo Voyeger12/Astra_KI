@@ -182,7 +182,6 @@ class SearchEngine:
             Dict mit 'erfolg', 'ergebnisse', 'zusammenfassung'
         """
         try:
-            from duckduckgo_search import DDGS
             import time
             from modules.logger import astra_logger
             
@@ -192,23 +191,43 @@ class SearchEngine:
             
             astra_logger.info(f"🔍 Suche gestartet: '{query}'")
             
-            # Führe Suche durch
-            try:
-                ddgs = DDGS(timeout=10)
-                results = list(ddgs.text(query, max_results=max_results))
-                astra_logger.info(f"✅ {len(results)} Ergebnisse gefunden")
-            except Exception as search_error:
-                astra_logger.error(f"❌ DuckDuckGo Fehler: {str(search_error)[:100]}")
-                raise
+            results = []
             
-            time.sleep(0.5)  # Rate limiting
+            # Versuche DuckDuckGo
+            try:
+                from duckduckgo_search import DDGS
+                astra_logger.info(f"📡 Nutze DuckDuckGo API...")
+                
+                ddgs = DDGS(timeout=15, proxies=None)
+                search_results = ddgs.text(query, max_results=max_results)
+                
+                # Konvertiere Iterator zu Liste mit Exception-Handling
+                results = []
+                for i, result in enumerate(search_results):
+                    if i >= max_results:
+                        break
+                    results.append(result)
+                    astra_logger.debug(f"  Result {i+1}: {result.get('title', 'N/A')[:50]}")
+                
+                astra_logger.info(f"✅ DuckDuckGo: {len(results)} Ergebnisse gefunden")
+            
+            except Exception as ddgs_error:
+                astra_logger.warning(f"⚠️ DuckDuckGo fehlgeschlagen: {str(ddgs_error)[:80]}")
+                results = []
+            
+            time.sleep(0.3)  # Rate limiting
             
             if not results:
-                astra_logger.warning(f"⚠️ Keine Ergebnisse für '{query}'")
+                astra_logger.warning(f"❌ KEINE Suchergebnisse gefunden für: '{original_query}'")
+                
+                # Fallback: Vereinfachte Antwort
                 return {
                     'erfolg': False,
                     'ergebnisse': [],
-                    'zusammenfassung': f"Keine Suchergebnisse für '{original_query}' gefunden."
+                    'zusammenfassung': (
+                        f"Konnte keine Suchergebnisse für '{original_query}' finden. "
+                        f"Bitte versuchen Sie eine andere Anfrage oder überprüfen Sie Ihre Internetverbindung."
+                    )
                 }
             
             # Verarbeite Ergebnisse
@@ -232,7 +251,7 @@ class SearchEngine:
             # Erstelle Zusammenfassung basierend auf Query-Typ
             zusammenfassung = SearchEngine._summarize_results(original_query, formatted_results)
             
-            astra_logger.info(f"✅ Suche erfolgreich verarbeitet")
+            astra_logger.info(f"✅ Suchergebnisse verarbeitet und zusammengefasst")
             
             return {
                 'erfolg': True,
@@ -242,18 +261,22 @@ class SearchEngine:
             }
         
         except ImportError as e:
-            astra_logger.error(f"❌ duckduckgo_search nicht installiert: {str(e)}")
+            astra_logger.error(f"❌ duckduckgo-search Paket nicht verfügbar: {str(e)}")
             return {
                 'erfolg': False,
                 'ergebnisse': [],
-                'zusammenfassung': "⚠️ duckduckgo-search nicht installiert. Bitte installieren Sie: pip install duckduckgo-search"
+                'zusammenfassung': (
+                    "⚠️ Das duckduckgo-search Paket ist nicht installiert.\n"
+                    "Installieren Sie es mit: pip install duckduckgo-search\n"
+                    "Ich antworte basierend auf meinem Wissen, aber ohne aktuelle Daten."
+                )
             }
         except Exception as e:
-            astra_logger.error(f"❌ Sucherror: {str(e)[:150]}")
+            astra_logger.error(f"❌ Unerwarteter Fehler bei Suche: {str(e)[:150]}")
             return {
                 'erfolg': False,
                 'ergebnisse': [],
-                'zusammenfassung': f"Fehler bei der Suche: {str(e)[:100]}"
+                'zusammenfassung': f"Fehler bei der Internetsuche: {str(e)[:100]}"
             }
     
     @staticmethod
