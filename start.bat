@@ -5,20 +5,27 @@ cls
 
 REM =========================================================
 REM ASTRA AI - Windows Launcher
-REM Production-Ready v0.2
+REM v2.0
 REM =========================================================
 
 echo.
-echo [START] ASTRA AI - Neural Intelligence
+echo [START] ASTRA AI v2.0
 echo =========================================================
 echo Features:
-echo   - Hybrid Memory mit Confidence-Scoring
+echo   - Streaming LLM-Antworten (Echtzeit)
+echo   - MERKEN-Tag Memory System
 echo   - Rich Markdown und Code-Highlighting
-echo   - Intelligente Error Communication
-echo   - Rate-Limiting und Crash-Recovery
+echo   - DuckDuckGo Internet-Suche
+echo   - Crash-Recovery und Backup-System
 echo.
 
 REM Pruefe Python Installation
+REM Aktiviere venv falls vorhanden
+if exist "venv\Scripts\activate.bat" (
+    echo [INFO] Aktiviere Virtual Environment...
+    call venv\Scripts\activate.bat
+)
+
 python --version >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Python nicht gefunden!
@@ -72,7 +79,6 @@ if errorlevel 1 (
 REM Starte Anwendung
 echo.
 echo [START] Starte ASTRA AI...
-echo [INFO] v0.2 Production-Ready mit allen Features
 echo.
 python main.py
 

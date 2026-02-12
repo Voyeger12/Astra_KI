@@ -1,35 +1,11 @@
 """
 ASTRA UI - Worker Threads
 ==========================
-Alle QThread-basierte Worker für non-blocking Operationen
+QThread-basierte Worker für non-blocking Operationen
 """
 
-from typing import List, Dict
 from PyQt6.QtCore import QThread, pyqtSignal
 from modules.ollama_client import OllamaClient
-
-
-class LLMWorker(QThread):
-    """Worker-Thread für LLM-Anfragen (non-blocking)"""
-    
-    finished = pyqtSignal(str)
-    error = pyqtSignal(str)
-    
-    def __init__(self, ollama: OllamaClient, model: str, messages: List[Dict]):
-        super().__init__()
-        self.ollama = ollama
-        self.model = model
-        self.messages = messages
-    
-    def run(self):
-        try:
-            response = self.ollama.chat(self.model, self.messages)
-            if response:
-                self.finished.emit(response)
-            else:
-                self.error.emit("Keine Antwort von Ollama")
-        except Exception as e:
-            self.error.emit(f"Fehler: {str(e)}")
 
 
 class LLMStreamWorker(QThread):
@@ -39,7 +15,7 @@ class LLMStreamWorker(QThread):
     finished = pyqtSignal(str)         # Komplette Antwort
     error = pyqtSignal(str)
     
-    def __init__(self, ollama: OllamaClient, model: str, messages: List[Dict], temperature: float = 0.7):
+    def __init__(self, ollama: OllamaClient, model: str, messages: list[dict], temperature: float = 0.7):
         super().__init__()
         self.ollama = ollama
         self.model = model
@@ -49,14 +25,27 @@ class LLMStreamWorker(QThread):
     
     def run(self):
         try:
+            from modules.logger import astra_logger
+            
+            astra_logger.info(f"🚀 LLMStreamWorker.run() started für {self.model}")
+            
+            chunk_count = 0
+            
             # Nutze die neue streaming Methode mit Temperature
             for chunk in self.ollama.chat_stream(self.model, self.messages, self.temperature):
+                chunk_count += 1
+                
                 if chunk:
                     self.full_response += chunk
                     self.chunk_received.emit(chunk)  # Emit jeden Chunk sofort!
             
+            astra_logger.info(f"✅ Stream fertig: {chunk_count} Chunks, {len(self.full_response)} Zeichen total")
             self.finished.emit(self.full_response)
+            
         except Exception as e:
+            msg = f"❌ LLMStreamWorker Error: {e}"
+            from modules.logger import astra_logger
+            astra_logger.error(msg, exc_info=True)
             self.error.emit(f"Fehler: {str(e)}")
 
 
@@ -121,18 +110,19 @@ class RichFormatterWorker(QThread):
     1. Streaming zeigt Plain-Text (super schnell)
     2. Response fertig → starte RichFormatterWorker
     3. Worker formatiert mit RichFormatter (im Hintergrund)
-    4. Signal mit HML zurück an Main-Thread
+    4. Signal mit HTML zurück an Main-Thread
     5. insertHtml() ist super schnell (nur append, kein format)
     """
     
     finished = pyqtSignal(str)  # Formatiertes HTML
     error = pyqtSignal(str)
     
-    def __init__(self, text: str, source: str = "llm", confidence: float = None):
+    def __init__(self, text: str, source: str = "llm", confidence: float = None, text_size: int = 10):
         super().__init__()
         self.text = text
         self.source = source
         self.confidence = confidence
+        self.text_size = text_size  # Wichtig für einheitliche Schriftgröße!
     
     def run(self):
         """Formatiert Text mit RichFormatter im Worker-Thread"""
@@ -150,37 +140,11 @@ class RichFormatterWorker(QThread):
             self.error.emit(f"RichFormatter: {str(e)[:100]}")
     
     def _build_bubble_html(self, formatted_content: str) -> str:
-        """Baue komplett fertige Bubble (kein formatieren mehr nötig!)"""
-        from modules.ui.colors import COLORS
+        """Gibt nur den formatierten Inhalt zurück.
         
-        # Badge für Source
-        source_badge = ""
-        if self.source == "search":
-            source_badge = '<div style="font-size:10px;color:#a8f5a8;margin-bottom:4px;">🔍 Gesucht im Web</div>'
-        elif self.source == "llm":
-            source_badge = '<div style="font-size:10px;color:#a8d5f5;margin-bottom:4px;">🤖 KI-Antwort</div>'
-        elif self.source == "memory":
-            conf_pct = int(self.confidence * 100) if self.confidence else 0
-            conf_color = "#a8f5a8" if self.confidence >= 0.8 else "#f5d8a8" if self.confidence >= 0.6 else "#f5a8a8"
-            source_badge = f'<div style="font-size:10px;color:{conf_color};margin-bottom:4px;">💾 Erinnerung ({conf_pct}%)</div>'
-        elif self.source:
-            source_badge = f'<div style="font-size:10px;color:#aaa;margin-bottom:4px;">📝 {self.source}</div>'
-        
-        text_color = COLORS['text']
-        primary_color = COLORS['primary']
-        font_size = 10  # Default
-        
-        html = (
-            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-            f'<td align="left" style="padding:8px 4px;">'
-            f'{source_badge}'
-            f'<div style="display:inline-block;background:#2a2a2a;color:{text_color};border-radius:20px;padding:12px 18px;margin:8px 4px;border:2px solid {primary_color};max-width:85%;word-wrap:break-word;font-size:{font_size}pt;box-shadow:0 2px 8px rgba(0,0,0,0.5);">'
-            f'{formatted_content}'
-            '</div>'
-            '</td>'
-            '<td width="10%"></td>'
-            '</tr></table>'
-        )
-        return html
+        Das Bubble-Styling (Hintergrund, Rundung, Footer) übernimmt
+        jetzt BubbleWidget per Qt Stylesheet — kein HTML-Wrapper nötig.
+        """
+        return formatted_content
 
 

@@ -6,8 +6,8 @@ Dialog für Benutzereinstellungen mit Tabs
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QWidget, QFrame, QLabel,
-    QComboBox, QCheckBox, QTextEdit, QPushButton, QTabWidget,
-    QMessageBox, QSlider
+    QComboBox, QCheckBox, QPushButton, QTabWidget,
+    QMessageBox, QSlider, QListWidget, QListWidgetItem
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QIcon
@@ -227,27 +227,34 @@ class SettingsDialog(QDialog):
         return widget
     
     def _create_memory_tab(self) -> QWidget:
-        """TAB 3: Gedächtnis-Verwaltung"""
+        """TAB 3: Gedächtnis-Verwaltung mit Einzellöschung"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
         
-        # Header
-        header = QLabel("📖 Gespeicherte Informationen:")
-        header.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 11pt;")
-        layout.addWidget(header)
+        # Header mit Anzahl
+        self.memory_header = QLabel("📖 Gespeicherte Informationen:")
+        self.memory_header.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 11pt;")
+        layout.addWidget(self.memory_header)
         
-        # Memory-Text
-        self.memory_text = QTextEdit()
-        self.memory_text.setReadOnly(True)
-        self.memory_text.setMinimumHeight(280)
-        self.memory_text.setStyleSheet(
-            f"background-color: {COLORS['surface']}; color: {COLORS['text']}; "
-            f"border: 1px solid {COLORS['primary']}; border-radius: 8px; padding: 10px;"
+        # Memory-Liste (statt QTextEdit) - Mehrfachauswahl möglich
+        self.memory_list = QListWidget()
+        self.memory_list.setMinimumHeight(280)
+        self.memory_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.memory_list.setStyleSheet(
+            f"QListWidget {{ background-color: {COLORS['surface']}; color: {COLORS['text']}; "
+            f"border: 1px solid {COLORS['primary']}; border-radius: 8px; padding: 6px; }}"
+            f"QListWidget::item {{ padding: 6px; border-bottom: 1px solid {COLORS['background']}; }}"
+            f"QListWidget::item:selected {{ background-color: {COLORS['primary']}; color: white; }}"
         )
         self.update_memory_display()
-        layout.addWidget(self.memory_text)
+        layout.addWidget(self.memory_list)
+        
+        # Info-Label
+        info_label = QLabel("💡 Tipp: Einträge mit Klick auswählen (Strg/Shift für Mehrfachauswahl)")
+        info_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 9pt; font-style: italic;")
+        layout.addWidget(info_label)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -262,7 +269,16 @@ class SettingsDialog(QDialog):
         refresh_btn.clicked.connect(self.update_memory_display)
         button_layout.addWidget(refresh_btn)
         
-        clear_btn = QPushButton("🗑️ Gedächtnis löschen")
+        delete_selected_btn = QPushButton("🗑️ Ausgewählte löschen")
+        delete_selected_btn.setMinimumHeight(36)
+        delete_selected_btn.setStyleSheet(
+            f"background-color: {COLORS['warning']}; color: #000; border: none; "
+            f"border-radius: 8px; font-weight: bold;"
+        )
+        delete_selected_btn.clicked.connect(self.delete_selected_memories)
+        button_layout.addWidget(delete_selected_btn)
+        
+        clear_btn = QPushButton("⚠️ Alles löschen")
         clear_btn.setMinimumHeight(36)
         clear_btn.setStyleSheet(
             f"background-color: {COLORS['error']}; color: white; border: none; "
@@ -345,11 +361,8 @@ class SettingsDialog(QDialog):
         )
         inner.addWidget(self.preview_ai)
         
-        # Connect slider - beide: Preview UND Signal
-        self.text_size_slider.valueChanged.connect(self.update_text_size_preview)
-        self.text_size_slider.sliderMoved.connect(
-            lambda: self.text_size_changed.emit(self.text_size_slider.value())
-        )
+        # Connect slider - Preview UND Signal bei jeder Änderung
+        self.text_size_slider.valueChanged.connect(self._on_text_size_changed)
         
         layout.addWidget(frame)
         layout.addStretch()
@@ -357,24 +370,62 @@ class SettingsDialog(QDialog):
         return widget
     
     def update_memory_display(self):
-        """Aktualisiert die Memory-Anzeige"""
+        """Aktualisiert die Memory-Anzeige als selektierbare Liste"""
+        self.memory_list.clear()
+        
         if self.memory_manager:
             try:
-                memory_content = self.memory_manager.get_memory_string_deduplicated()
-                if memory_content == "Noch keine Gedächtnisfragmente vorhanden.":
-                    self.memory_text.setPlainText(
-                        "📭 Noch keine Einträge vorhanden.\n\n"
-                        "Schreibe einfach Nachrichten an Astra,\n"
-                        "und sie merkt sich automatisch\n"
-                        "persönliche Informationen!\n\n"
-                        "Oder sag: 'Merke: [deine Info]'"
-                    )
+                entries = self.memory_manager.get_memory_entries()
+                if not entries:
+                    item = QListWidgetItem("📭 Noch keine Einträge vorhanden.")
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                    self.memory_list.addItem(item)
+                    self.memory_header.setText("📖 Gespeicherte Informationen (0):")
                 else:
-                    self.memory_text.setPlainText(memory_content)
+                    self.memory_header.setText(f"📖 Gespeicherte Informationen ({len(entries)}):")
+                    for entry in entries:
+                        text = f"#{entry['id']} | [{entry['category']}] {entry['content']}"
+                        item = QListWidgetItem(text)
+                        item.setData(Qt.ItemDataRole.UserRole, entry['id'])
+                        self.memory_list.addItem(item)
             except Exception as e:
-                self.memory_text.setPlainText(f"❌ Fehler beim Laden: {e}")
+                item = QListWidgetItem(f"❌ Fehler beim Laden: {e}")
+                self.memory_list.addItem(item)
         else:
-            self.memory_text.setPlainText("⚠️ Memory Manager nicht verfügbar")
+            item = QListWidgetItem("⚠️ Memory Manager nicht verfügbar")
+            self.memory_list.addItem(item)
+    
+    def delete_selected_memories(self):
+        """Löscht die ausgewählten Memory-Einträge"""
+        selected = self.memory_list.selectedItems()
+        if not selected:
+            QMessageBox.warning(self, "⚠️", "Bitte wähle Einträge zum Löschen aus")
+            return
+        
+        ids_to_delete = []
+        for item in selected:
+            memory_id = item.data(Qt.ItemDataRole.UserRole)
+            if memory_id is not None:
+                ids_to_delete.append(memory_id)
+        
+        if not ids_to_delete:
+            return
+        
+        reply = QMessageBox.question(
+            self,
+            "⚠️ Einträge löschen?",
+            f"{len(ids_to_delete)} Eintrag/Einträge endgültig löschen?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            deleted = 0
+            for mid in ids_to_delete:
+                if self.memory_manager.delete_memory(mid):
+                    deleted += 1
+            
+            QMessageBox.information(self, "✅", f"{deleted} Einträge gelöscht")
+            self.update_memory_display()
     
     def clear_memory(self):
         """Löscht das gesamte Gedächtnis"""
@@ -396,8 +447,8 @@ class SettingsDialog(QDialog):
         else:
             QMessageBox.warning(self, "⚠️", "Memory Manager nicht verfügbar")
     
-    def update_text_size_preview(self):
-        """Aktualisiert die Vorschau"""
+    def _on_text_size_changed(self):
+        """Aktualisiert die Vorschau UND emittiert das Signal"""
         size = self.text_size_slider.value()
         self.size_value_label.setText(f"{size}pt")
         
@@ -412,6 +463,9 @@ class SettingsDialog(QDialog):
         
         # Speichere Einstellung
         self.settings_manager.set('text_size', size)
+        
+        # Emittiere Signal an ChatWindow
+        self.text_size_changed.emit(size)
 
 
 __all__ = ['SettingsDialog']

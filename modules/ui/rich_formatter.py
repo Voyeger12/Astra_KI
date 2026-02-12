@@ -6,20 +6,13 @@ Unterstützt: Code-Blocks, Inline-Code, Bold, Italic, Links, Listen
 """
 
 import re
-from typing import Tuple, TYPE_CHECKING
 from html import escape
 
-# Type-checking imports (nur für IDE/Pylance, nicht zur Runtime)
-if TYPE_CHECKING:
-    from pygments import highlight
-    from pygments.lexers import get_lexer_by_name, TextLexer
-    from pygments.formatters import HtmlFormatter
-
-# Runtime-imports mit try/except
+# Pygments für Syntax-Highlighting (optional)
 try:
-    from pygments import highlight
-    from pygments.lexers import get_lexer_by_name, TextLexer
-    from pygments.formatters import HtmlFormatter
+    from pygments import highlight  # type: ignore[reportMissingModuleSource]
+    from pygments.lexers import get_lexer_by_name, TextLexer  # type: ignore[reportMissingModuleSource]
+    from pygments.formatters import HtmlFormatter  # type: ignore[reportMissingModuleSource]
     PYGMENTS_AVAILABLE = True
 except ImportError:
     PYGMENTS_AVAILABLE = False
@@ -28,7 +21,7 @@ except ImportError:
 class RichFormatter:
     """Formatiert Text mit Markdown und Syntax-Highlighting"""
     
-    # Regex-Patterns
+    # Regex-Patterns (Pre-compiled für Performance!)
     CODE_BLOCK_PATTERN = re.compile(r'```(\w*)\n(.*?)\n```', re.DOTALL)
     INLINE_CODE_PATTERN = re.compile(r'`([^`]+)`')
     BOLD_PATTERN = re.compile(r'\*\*(.+?)\*\*')
@@ -36,6 +29,10 @@ class RichFormatter:
     LINK_PATTERN = re.compile(r'\[(.+?)\]\((.+?)\)')
     BULLET_PATTERN = re.compile(r'^ *[-*] (.+)$', re.MULTILINE)
     HEADING_PATTERN = re.compile(r'^(#{1,6}) (.+)$', re.MULTILINE)
+    
+    # Cache für formatierte Strings (verhindert Doppel-Formatierung!)
+    _format_cache = {}
+    _cache_max_size = 500  # Maximale Anzahl cached items
     
     @staticmethod
     def highlight_code(code: str, language: str = "text") -> str:
@@ -57,7 +54,7 @@ class RichFormatter:
                 style='monokai',
                 full=False,  # Kein komplettes HTML Dokument
                 linenos=False,
-                noclasses=False,  # Keine inline-styles sondern CSS-Classes
+                noclasses=True,  # Inline-styles für korrektes Highlighting in QTextEdit
             )
             
             highlighted = highlight(code, lexer, formatter)
@@ -71,7 +68,16 @@ class RichFormatter:
     
     @staticmethod
     def format_text(text: str) -> str:
-        """Konvertiert Markdown zu HTML"""
+        """Konvertiert Markdown zu HTML - mit Cache für Performance!"""
+        # Check Cache first (verhindert Doppel-Formatierung!)
+        cache_key = hash(text)
+        if cache_key in RichFormatter._format_cache:
+            return RichFormatter._format_cache[cache_key]
+        
+        # Wenn Cache zu groß wird, leere ihn
+        if len(RichFormatter._format_cache) > RichFormatter._cache_max_size:
+            RichFormatter._format_cache.clear()
+        
         text = escape(text)
         
         # 1. Code-Blöcke (zuerst!)
@@ -129,81 +135,8 @@ class RichFormatter:
         # 8. Zeilenumbrüche zu <br> (preserve original newlines)
         text = text.replace('\n', '<br/>')
         
+        # Cache das Ergebnis
+        RichFormatter._format_cache[cache_key] = text
         return text
     
-    @staticmethod
-    def format_message_with_metadata(
-        text: str, 
-        role: str,
-        source: str = None,  # "search" | "llm" | "memory" | None
-        confidence: float = None  # 0.0-1.0 für Memory
-    ) -> str:
-        """
-        Formatiert eine komplette Message mit Metadaten
-        
-        Args:
-            text: Nachrichtentext mit optionalem Markdown
-            role: "user" | "assistant"
-            source: Quelle (search = 🔍, llm = 🤖, memory = 💾)
-            confidence: Confidence-Score für Memory (0.0-1.0)
-        """
-        formatted_html = RichFormatter.format_text(text)
-        
-        # Badge für Source
-        source_badge = ""
-        if source == "search":
-            source_badge = '<span style="display:inline-block;background:#2a6b42;color:#a8f5a8;padding:2px 8px;border-radius:12px;font-size:10px;margin-right:8px;">🔍 Gesucht</span>'
-        elif source == "llm":
-            source_badge = '<span style="display:inline-block;background:#2a4a6b;color:#a8d5f5;padding:2px 8px;border-radius:12px;font-size:10px;margin-right:8px;">🤖 KI</span>'
-        elif source == "memory":
-            badge_color = RichFormatter._confidence_color(confidence)
-            source_badge = f'<span style="display:inline-block;background:{badge_color};color:#ffffff;padding:2px 8px;border-radius:12px;font-size:10px;margin-right:8px;">💾 {confidence*100:.0f}%</span>'
-        
-        # Wrapper mit Source-Info
-        final_html = f"""
-        <div style="margin:2px 0;">
-            {source_badge}
-            {formatted_html}
-        </div>
-        """
-        
-        return final_html
-    
-    @staticmethod
-    def _confidence_color(confidence: float) -> str:
-        """Gibt Farbe basierend auf Confidence-Score zurück"""
-        if confidence >= 0.9:
-            return "#2a6b2a"  # Grün
-        elif confidence >= 0.7:
-            return "#6b6b2a"  # Gelb
-        elif confidence >= 0.5:
-            return "#6b4a2a"  # Orange
-        else:
-            return "#6b2a2a"  # Rot
 
-
-# Test-Code
-if __name__ == "__main__":
-    test_text = """
-# Beispiel Titel
-
-Das ist **fetter Text** und das ist *kursiv*.
-
-Hier ist `inline code`:
-
-```python
-def hello_world():
-    print("Hello, World!")
-    return True
-```
-
-- Punkt 1
-- Punkt 2
-- Punkt 3
-
-[Link zu Google](https://google.com)
-"""
-    
-    result = RichFormatter.format_text(test_text)
-    print("HTML Output:")
-    print(result)

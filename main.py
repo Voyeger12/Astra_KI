@@ -7,6 +7,7 @@ Mit Crash-Recovery und Error-Handling
 
 import sys
 import os
+import sqlite3
 import traceback
 from pathlib import Path
 
@@ -20,7 +21,7 @@ def safe_init_database():
         db = Database()
         
         # Test Database-Integrität
-        conn = __import__('sqlite3').connect(db.db_path, timeout=5)
+        conn = sqlite3.connect(db.db_path, timeout=5)
         cursor = conn.cursor()
         cursor.execute("PRAGMA integrity_check;")
         result = cursor.fetchone()
@@ -96,7 +97,7 @@ try:
             # Starte Hauptfenster
             print("🚀 Starte ASTRA AI...")
             log_info("Starte ChatWindow", "STARTUP")
-            window = ChatWindow()
+            window = ChatWindow(db=db)
             window.show()
             
             log_info("Anwendung erfolgreich gestartet", "STARTUP")
@@ -117,7 +118,7 @@ try:
                 )
                 msg_box.setIcon(QMessageBox.Icon.Critical)
                 msg_box.exec()
-            except:
+            except Exception:
                 print(error_msg)
             
             return 1

@@ -6,7 +6,7 @@ Kommunikation mit Ollama LLM mit adaptiven Timeouts
 
 import requests
 import json
-from typing import Optional, List, Dict
+from typing import List, Dict
 from config import OLLAMA_HOST, OLLAMA_TIMEOUTS, OLLAMA_RETRY_ATTEMPTS, OLLAMA_RETRY_DELAY
 
 
@@ -24,9 +24,9 @@ class OllamaClient:
     def _get_timeout(self, model: str) -> int:
         """Intelligent Timeout basierend auf Modell bestimmen"""
         for model_key, timeout in self.model_timeouts.items():
-            if model_key != "default" and model_key in model:
+            if model_key in model:
                 return timeout
-        return self.model_timeouts["default"]
+        return self.model_timeouts.get('default', 120)
     
     def is_alive(self) -> bool:
         """Prüft ob Ollama erreichbar ist"""
@@ -67,8 +67,13 @@ class OllamaClient:
         
         for attempt in range(1, self.max_retries + 1):
             try:
-                timeout = self._get_timeout(model)
-                astra_logger.info(f"Chat-Stream an {model} (Attempt {attempt}/{self.max_retries})")
+                # ⚡ WICHTIG: Zeitouts für Produktionsumgebung
+                # - Connect: 10s (Ollama muss schnell antworten)
+                # - Read: Adaptiv basierend auf Modell aus config.py!
+                connect_timeout = 10
+                read_timeout = self._get_timeout(model)
+                
+                astra_logger.info(f"Chat-Stream an {model} (Attempt {attempt}/{self.max_retries}, Timeout: {read_timeout}s)")
                 
                 payload = {
                     "model": model,
@@ -77,28 +82,36 @@ class OllamaClient:
                     "temperature": temperature
                 }
                 
+                # 🔥 POST mit reduzierten Timeouts für schnelleres Failover
+                astra_logger.info(f"POST request to {self.base_url}/chat (timeout={read_timeout}s)")
                 response = requests.post(
                     f"{self.base_url}/chat",
                     json=payload,
-                    timeout=timeout,
+                    timeout=(connect_timeout, read_timeout),  # ⚡ (connect, read) timeouts!
                     stream=True
                 )
                 
+                astra_logger.info(f"POST Response: {response.status_code}")
+                
                 if response.status_code == 200:
                     full_response = ""
-                    for line in response.iter_lines():
+                    chunk_count = 0
+                    
+                    for line in response.iter_lines(decode_unicode=True):
                         if line:
                             try:
                                 chunk = json.loads(line)
                                 text = chunk.get("message", {}).get("content", "")
                                 if text:
                                     full_response += text
+                                    chunk_count += 1
                                     if callback:
                                         callback(text)
                                     yield text
                             except json.JSONDecodeError:
                                 continue
-                    astra_logger.info(f"Stream abgeschlossen, {len(full_response)} Zeichen empfangen")
+                    
+                    astra_logger.info(f"Stream fertig: {len(full_response)} Zeichen, {chunk_count} Chunks")
                     return
                 else:
                     astra_logger.error(f"HTTP {response.status_code}")
@@ -106,174 +119,30 @@ class OllamaClient:
                         time.sleep(retry_delay)
                         retry_delay *= 1.5
                         continue
-                    
-            except requests.Timeout:
-                astra_logger.warning(f"Stream Timeout (Attempt {attempt}/{self.max_retries})")
+                    yield f"\u274c Ollama HTTP-Fehler: {response.status_code}"
+                    return
+            except requests.ConnectTimeout as ct:
+                msg = f"Connection Timeout (Attempt {attempt}/{self.max_retries})"
+                astra_logger.warning(msg)
                 if attempt < self.max_retries:
                     time.sleep(retry_delay)
                     retry_delay *= 1.5
                     continue
-                yield "⏱️ Stream Timeout"
+                yield "❌ Verbindung zu Ollama fehlgeschlagen"
+                return
+                
+            except requests.ReadTimeout as rt:
+                msg = f"Read Timeout (Attempt {attempt}/{self.max_retries}) - Modell generiert zu langsam!"
+                astra_logger.warning(msg)
+                if attempt < self.max_retries:
+                    time.sleep(retry_delay)
+                    retry_delay *= 1.5
+                    continue
+                yield "⏱️ Generierung hat zu lange gedauert - Modell zu langsam?"
                 return
                 
             except Exception as e:
-                astra_logger.error(f"Stream Error: {str(e)}")
+                msg = f"Stream Error: {str(e)}"
+                astra_logger.error(msg, exc_info=True)
                 yield f"❌ Fehler: {str(e)}"
                 return
-    
-    def chat(self, model: str, messages: List[Dict[str, str]], temperature: float = 0.7) -> Optional[str]:
-        """
-        Sendet eine Chat-Anfrage an Ollama mit intelligenter Retry-Logik
-        
-        Args:
-            model: Modellname
-            messages: List of {"role": "user"/"assistant"/"system", "content": "..."}
-            temperature: Kreativität (0.0-1.0)
-        
-        Returns:
-            Vollständige Antwort als String oder None bei Fehler
-        """
-        import time
-        from .logger import astra_logger
-        
-        retry_delay = self.initial_retry_delay
-        
-        for attempt in range(1, self.max_retries + 1):
-            try:
-                timeout = self._get_timeout(model)
-                astra_logger.info(f"Chat-Anfrage an {model} (Attempt {attempt}/{self.max_retries}, Timeout: {timeout}s)")
-                
-                start_time = time.time()
-                
-                payload = {
-                    "model": model,
-                    "messages": messages,
-                    "stream": False,
-                    "temperature": temperature
-                }
-                
-                response = requests.post(
-                    f"{self.base_url}/chat",
-                    json=payload,
-                    timeout=timeout
-                )
-                
-                elapsed = time.time() - start_time
-                astra_logger.info(f"Chat-Response erhalten in {elapsed:.2f}s")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    return data.get("message", {}).get("content", "")
-                else:
-                    error_msg = f"HTTP {response.status_code}: {response.text[:100]}"
-                    astra_logger.error(f"Chat-Fehler: {error_msg}")
-                    if attempt < self.max_retries:
-                        astra_logger.info(f"Retry in {retry_delay}s...")
-                        time.sleep(retry_delay)
-                        retry_delay *= 1.5
-                        continue
-                    return f"❌ Ollama-Fehler: {response.status_code}"
-                    
-            except requests.Timeout:
-                elapsed = time.time() - start_time
-                astra_logger.warning(f"Timeout nach {elapsed:.1f}s (Attempt {attempt}/{self.max_retries})")
-                
-                if attempt < self.max_retries:
-                    # Adaptives Backoff-Delay
-                    astra_logger.info(f"Retry mit erhöhtem Timeout...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 1.5
-                    continue
-                else:
-                    timeout = self._get_timeout(model)
-                    msg = f"⏱️ Ollama antwortet nicht schnell genug (Timeout nach {attempt} Versuchen)"
-                    astra_logger.error(msg)
-                    return msg
-                    
-            except requests.ConnectionError:
-                astra_logger.error(f"Verbindungsfehler zu Ollama (Attempt {attempt}/{self.max_retries})")
-                if attempt < self.max_retries:
-                    astra_logger.info(f"Retry in {retry_delay}s...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 1.5
-                    continue
-                return "🔴 Verbindungsfehler: Ollama läuft nicht"
-                
-            except Exception as e:
-                astra_logger.error(f"Fehler in chat(): {str(e)}")
-                return f"❌ Fehler: {str(e)}"
-        
-        return "❌ Alle Versuche aufgebraucht"
-    
-    def generate(self, model: str, prompt: str, temperature: float = 0.7) -> Optional[str]:
-        """
-        Einfacher Generate-Call (nicht chat-basiert) mit Retry-Logik
-        
-        Args:
-            model: Modellname
-            prompt: Der Prompt
-            temperature: Kreativität
-        
-        Returns:
-            Vollständige Antwort oder None
-        """
-        import time
-        from .logger import astra_logger
-        
-        retry_delay = self.initial_retry_delay
-        
-        for attempt in range(1, self.max_retries + 1):
-            try:
-                timeout = self._get_timeout(model)
-                astra_logger.info(f"Generate-Anfrage an {model} (Attempt {attempt}/{self.max_retries}, Timeout: {timeout}s)")
-                
-                start_time = time.time()
-                
-                payload = {
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "temperature": temperature
-                }
-                
-                response = requests.post(
-                    f"{self.base_url}/generate",
-                    json=payload,
-                    timeout=timeout
-                )
-                
-                elapsed = time.time() - start_time
-                astra_logger.info(f"Generate-Response erhalten in {elapsed:.2f}s")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    return data.get("response", "")
-                else:
-                    astra_logger.error(f"Generate-Fehler: HTTP {response.status_code}")
-                    if attempt < self.max_retries:
-                        time.sleep(retry_delay)
-                        retry_delay *= 1.5
-                        continue
-                    return f"❌ Ollama-Fehler: {response.status_code}"
-                    
-            except requests.Timeout:
-                astra_logger.warning(f"Timeout in generate() (Attempt {attempt}/{self.max_retries})")
-                if attempt < self.max_retries:
-                    time.sleep(retry_delay)
-                    retry_delay *= 1.5
-                    continue
-                return "⏱️ Timeout"
-                
-            except requests.ConnectionError:
-                astra_logger.error(f"ConnectionError in generate() (Attempt {attempt}/{self.max_retries})")
-                if attempt < self.max_retries:
-                    time.sleep(retry_delay)
-                    retry_delay *= 1.5
-                    continue
-                return "🔴 Ollama läuft nicht"
-                
-            except Exception as e:
-                astra_logger.error(f"Fehler in generate(): {str(e)}")
-                return f"❌ Fehler: {str(e)}"
-        
-        return "❌ Alle Versuche aufgebraucht"
