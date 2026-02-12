@@ -5,35 +5,37 @@ Moderne Desktop-Oberfläche mit Rot-Schwarz Design
 Modularisierte Struktur für bessere Wartbarkeit
 """
 
-import sys
-from typing import List, Dict
+from html import escape as html_escape
+from threading import Thread
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QTextEdit, QPushButton, QListWidget, QListWidgetItem, QLineEdit,
-    QComboBox, QFrame, QMessageBox, QApplication, QLabel
+    QPushButton, QListWidget, QListWidgetItem, QLineEdit,
+    QFrame, QMessageBox, QLabel, QFileDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QIcon, QTextCursor
+from PyQt6.QtGui import QFont, QIcon
 from pathlib import Path
 
 from config import COLORS, WINDOW_WIDTH, WINDOW_HEIGHT, OLLAMA_MODELS, DEFAULT_MODEL
 from modules.database import Database
-from modules.utils import SecurityUtils, RateLimiter
+from modules.utils import SecurityUtils, RateLimiter, SearchEngine
 from modules.ollama_client import OllamaClient
 from modules.memory import MemoryManager
-from modules.utils import SearchEngine, TextUtils
+from modules.logger import astra_logger
 
 # Modularisierte Imports aus ui Submodule
 from modules.ui.styles import StyleSheet
-from modules.ui.workers import LLMWorker, LLMStreamWorker, HealthWorker, SearchWorker
+from modules.ui.workers import LLMStreamWorker, HealthWorker, SearchWorker
 from modules.ui.settings_manager import SettingsManager
 from modules.ui.settings_dialog import SettingsDialog
+from modules.ui.rich_formatter import RichFormatter
+from modules.ui.chat_display import ChatDisplayWidget
 
 
 class ChatWindow(QMainWindow):
     """Hauptfenster der ASTRA-Anwendung"""
     
-    def __init__(self):
+    def __init__(self, db: Database = None):
         super().__init__()
         self.setWindowTitle("ASTRA AI - Neural Intelligence")
         self.setGeometry(100, 100, WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -48,8 +50,8 @@ class ChatWindow(QMainWindow):
         except Exception:
             pass
         
-        # Initialise Komponenten
-        self.db = Database()
+        # Initialise Komponenten - nutze übergebene DB oder erstelle neue
+        self.db = db if db is not None else Database()
         self.ollama = OllamaClient()
         self.memory_manager = MemoryManager(self.db)
         self.settings_manager = SettingsManager()
@@ -67,6 +69,7 @@ class ChatWindow(QMainWindow):
         # Worker-Thread
         self.llm_worker = None
         self.search_worker = None
+        self.formatter_worker = None  # Neu: muss initialisiert sein!
         self._ollama_alive = False
         self.health_worker = None
         
@@ -75,6 +78,8 @@ class ChatWindow(QMainWindow):
         self.is_waiting_for_response = False
         self._streaming_started = False
         self._pending_user_message = ""
+        self._current_response = ""
+        self._stream_timer = None       # Timer für Echtzeit-Streaming-Anzeige
         
         # Timer für Status-Updates
         self.status_timer = QTimer()
@@ -172,6 +177,16 @@ class ChatWindow(QMainWindow):
         button_layout.addWidget(delete_chat_btn)
         
         left_layout.addLayout(button_layout)
+        
+        # Export-Button
+        export_btn = QPushButton("📤 Chat exportieren")
+        export_btn.setMinimumHeight(36)
+        export_btn.setStyleSheet(
+            f"background-color: {COLORS['surface']}; color: {COLORS['text']}; "
+            f"border: 2px solid {COLORS['primary']}; border-radius: 8px; font-weight: bold; font-size: 9pt;"
+        )
+        export_btn.clicked.connect(self.export_current_chat)
+        left_layout.addWidget(export_btn)
         left_layout.addStretch()
         
         # Bottom Section
@@ -233,31 +248,16 @@ class ChatWindow(QMainWindow):
         chat_header_frame.setMaximumHeight(48)
         right_layout.addWidget(chat_header_frame)
         
-        # Chat-Display
+        # Chat-Display — Widget-basiert für echte runde Bubbles
         chat_frame = QFrame()
         chat_frame.setStyleSheet(
-            f"background-color: {COLORS['surface']}; border: 1px solid {COLORS['primary']}; border-radius: 12px;"
+            f"background-color: {COLORS['background']}; border: none; border-radius: 12px;"
         )
         chat_layout = QVBoxLayout(chat_frame)
         chat_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.chat_display = QTextEdit()
-        self.chat_display.setReadOnly(True)
-        self.chat_display.setMarkdown("")
+        self.chat_display = ChatDisplayWidget(text_size=self.current_text_size)
         self.chat_display.setMinimumHeight(300)
-        # Nutze aktuelle Textgröße
-        self.chat_display.setStyleSheet(
-            f"QTextEdit {{ "
-            f"background: {COLORS['background']}; "
-            f"color: {COLORS['text']}; "
-            f"border: 2px solid {COLORS['primary']}33; "
-            f"padding: 16px; "
-            f"border-radius: 14px; "
-            f"font-size: {self.current_text_size}pt; "
-            f"line-height: 1.6; "
-            f"}}"
-        )
-        self.chat_display.setFrameShape(QFrame.Shape.NoFrame)
         chat_layout.addWidget(self.chat_display)
         chat_frame.setLayout(chat_layout)
         right_layout.addWidget(chat_frame)
@@ -305,6 +305,7 @@ class ChatWindow(QMainWindow):
         )
         send_btn.clicked.connect(self.send_message)
         input_layout.addWidget(send_btn)
+        self.send_btn = send_btn  # Referenz für Stop-Button Toggle
         
         input_frame.setLayout(input_layout)
         right_layout.addWidget(input_frame)
@@ -333,23 +334,24 @@ class ChatWindow(QMainWindow):
             self.status_text.setStyleSheet(f"color: #00cc44; font-weight: bold; font-size: 9pt;")
     
     def load_chats(self):
-        """Lädt alle Chats aus der Datenbank"""
+        """Lädt alle Chat-Namen aus der Datenbank (OPTIMIERT!)"""
         self.chat_list.clear()
-        chats = self.db.get_all_chats()
+        # ⚡ OPTIMIERT: Lade NUR Chat-Namen, nicht alle Messages!
+        chat_names = self.db.get_all_chat_names()
         
         normalized_names = []
         idx = 1
-        for chat_name in list(chats.keys()):
+        for chat_name in chat_names:
             if chat_name.lower().startswith("log "):
                 new_name = f"Chat {idx:02d}"
                 counter = 1
                 candidate = new_name
-                while candidate in chats:
+                # Nutze get_all_chat_names() für den Check auch
+                while candidate in chat_names:
                     candidate = f"{new_name} ({counter})"
                     counter += 1
                 renamed = self.db.rename_chat(chat_name, candidate)
                 if renamed:
-                    chats[candidate] = chats.pop(chat_name)
                     chat_name = candidate
             item = QListWidgetItem(chat_name)
             self.chat_list.addItem(item)
@@ -379,36 +381,19 @@ class ChatWindow(QMainWindow):
         except Exception:
             pass
 
-    def _user_bubble_html(self, safe_text: str) -> str:
-        """HTML für User-Bubbles (Rot)"""
-        primary_color = COLORS['primary']
-        html = (
-            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-            '<td width="10%"></td>'
-            f'<td align="right" style="padding:8px 4px;">'
-            f'<div style="display:inline-block;background:{primary_color};color:#ffffff;border-radius:20px;padding:12px 18px;margin:8px 4px;max-width:80%;word-wrap:break-word;font-size:{self.current_text_size}pt;font-weight:500;box-shadow:0 2px 8px rgba(255,75,75,0.3);">'
-            f'{safe_text}'
-            '</div>'
-            '</td>'
-            '</tr></table>'
-        )
-        return html
+    def _add_user_bubble(self, text: str, timestamp: str = ""):
+        """Fügt eine User-Bubble als Widget hinzu."""
+        formatted = RichFormatter.format_text(text)
+        self.chat_display.add_bubble(formatted, role="user", timestamp=timestamp)
 
-    def _assistant_bubble_html(self, safe_text: str) -> str:
-        """HTML für KI-Bubbles (Dunkelgrau)"""
-        text_color = COLORS['text']
-        primary_color = COLORS['primary']
-        html = (
-            '<table width="100%" cellpadding="0" cellspacing="0"><tr>'
-            f'<td align="left" style="padding:8px 4px;">'
-            f'<div style="display:inline-block;background:#2a2a2a;color:{text_color};border-radius:20px;padding:12px 18px;margin:8px 4px;border:2px solid {primary_color};max-width:85%;word-wrap:break-word;font-size:{self.current_text_size}pt;box-shadow:0 2px 8px rgba(0,0,0,0.5);">'
-            f'{safe_text}'
-            '</div>'
-            '</td>'
-            '<td width="10%"></td>'
-            '</tr></table>'
+    def _add_assistant_bubble(self, text: str, source: str = None,
+                               confidence: float = None, timestamp: str = ""):
+        """Fügt eine Assistant-Bubble als Widget hinzu."""
+        formatted = RichFormatter.format_text(text)
+        return self.chat_display.add_bubble(
+            formatted, role="assistant", timestamp=timestamp,
+            source=source, confidence=confidence
         )
-        return html
     
     def on_chat_selected(self, item: QListWidgetItem):
         """Chat selected from list"""
@@ -417,27 +402,29 @@ class ChatWindow(QMainWindow):
     def select_chat(self, chat_name: str):
         """Wählt einen Chat und zeigt ihn an"""
         self.current_chat = chat_name
-        chats = self.db.get_all_chats()
-        messages = chats.get(chat_name, [])
+        messages = self.db.get_chat_messages(chat_name)
 
-        html_parts = []
-        html_parts.append('<html><head><meta charset="utf-8"></head><body style="font-family: Segoe UI, Arial, sans-serif; background: transparent; color: ' + COLORS['text'] + ';">')
+        # Alle alten Bubbles entfernen
+        self.chat_display.clear_all()
 
-        from html import escape
+        # Bubbles als Widgets hinzufügen
         for msg in messages:
             role = msg["role"]
             content = msg["content"]
-            safe_content = escape(content)
-            if role == "user":
-                html_parts.append(self._user_bubble_html(safe_content))
-            else:
-                html_parts.append(self._assistant_bubble_html(safe_content))
-
-        html_parts.append('</body></html>')
-        self.chat_display.setHtml(''.join(html_parts))
-        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
+            raw_ts = msg.get("timestamp", "")
+            
+            ts_display = ""
+            if raw_ts:
+                try:
+                    ts_display = raw_ts[11:16]
+                except Exception:
+                    ts_display = ""
+            
+            formatted = RichFormatter.format_text(content)
+            self.chat_display.add_bubble(
+                formatted, role=role, timestamp=ts_display
+            )
         
-        # CRITICAL FIX: Stelle sicher dass das Eingabefeld aktiviert ist
         self.message_input.setEnabled(True)
         self.is_waiting_for_response = False
     
@@ -461,73 +448,64 @@ class ChatWindow(QMainWindow):
             QMessageBox.warning(self, "⚠️", f"Nachricht zu lang (max {SecurityUtils.MAX_MESSAGE_LENGTH} Zeichen)")
             return
         
+        # Stop-Button: Wenn KI gerade generiert, stoppe stattdessen
         if self.is_waiting_for_response:
-            QMessageBox.information(self, "⏳", "Warte noch auf Antwort...")
+            self._stop_generation()
             return
         
         # "Merke" Funktion
         if message.lower().startswith("merke"):
             memory_text = message[5:].strip()
             if memory_text:
-                self.memory_manager.smart_learn(memory_text)
-                from html import escape
-                safe_msg = escape(message)
-                safe_memory = escape(memory_text)
+                self.memory_manager.learn(memory_text, "personal")
+                display_text = memory_text
                 
-                html_content = self.chat_display.toHtml()
-                user_bubble = self._user_bubble_html(safe_msg)
-                success_bubble = self._assistant_bubble_html(f"✅ Gespeichert! Ich merke mir: {safe_memory}")
-
-                if '</body>' in html_content:
-                    html_content = html_content.replace('</body>', user_bubble + success_bubble + '</body>')
-                else:
-                    html_content += user_bubble + success_bubble
-
-                self.chat_display.setHtml(html_content)
+                self._add_user_bubble(message)
+                self._add_assistant_bubble(
+                    f"✅ Gespeichert! Ich merke mir: {display_text}",
+                    source="memory", confidence=0.95
+                )
+                
                 self.db.save_message(self.current_chat, "user", message)
-                self.db.save_message(self.current_chat, "assistant", f"✅ Gespeichert! Ich merke mir: {memory_text}")
+                self.db.save_message(self.current_chat, "assistant", f"✅ Gespeichert! Ich merke mir: {display_text}")
+                
                 self.message_input.clear()
                 return
         
-        from html import escape
-        safe_message = escape(message)
+        # User-Message anzeigen
+        self._add_user_bubble(message)
         
-        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.insertHtml(self._user_bubble_html(safe_message))
-        self.db.save_message(self.current_chat, "user", message)
+        # ⚡ Speichere ASYNCHRON ohne UI zu blockieren!
+        def save_user_msg():
+            try:
+                self.db.save_message(self.current_chat, "user", message)
+            except Exception:
+                pass
+        
+        Thread(target=save_user_msg, daemon=True).start()
+        
         self.message_input.clear()
         # WICHTIG: Inputfeld NICHT disablen - nur is_waiting_for_response Flag sperrt neue Messages
         # das gibt bessere UX weil Benutzer kann tippen statt auf Antwort zu warten
         self.is_waiting_for_response = True
         
-        # Auto-learn wird ASYNCHRON im Background gemacht - blockiert UI nicht
-        def do_auto_learn():
-            """Background: Auto-Learn für Memory"""
-            try:
-                saved_info = self.memory_manager.auto_learn_from_message(message)
-                if saved_info:
-                    saved_items = ", ".join([f"{cat}" for cat, val in saved_info])
-                    # Zeige Info nur wenn etwas gelernt wurde (optional)
-                    # (Kommentiert aus um UI zu beschleunigen)
-            except Exception:
-                pass  # Fehler beim Background-Lernen ignorieren
-        
-        # Starte Background-Thread für Auto-Learn
-        from threading import Thread
-        learn_thread = Thread(target=do_auto_learn, daemon=True)
-        learn_thread.start()
+        # 🚫 Auto-Learn DEAKTIVIERT - verursacht fehlerhafte Einträge wie "Name: 30"
+        # Memory wird NUR über explizite [MERKEN:...] Tags der KI gespeichert.
         
         # === ASYNCHRONE INTERNET SEARCH INTEGRATION ===
-        if SearchEngine.needs_search(message):
+        search_enabled = self.settings_manager.get('search_enabled', True)
+        if search_enabled and SearchEngine.needs_search(message):
             # Speichere Message für später
             self._pending_user_message = message
             
-            # Zeige Such-Status
-            self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-            self.chat_display.insertHtml(self._assistant_bubble_html('🔍 Suche im Internet...'))
+            # Zeige Such-Status mit besserer Visualisierung
+            self._search_bubble = self._add_assistant_bubble(
+                '⏳ Suche im Internet nach relevanten Informationen...',
+                source="search"
+            )
             self.is_waiting_for_response = True
             
-            # Starte SearchWorker (asynchron, blockiert UI nicht!)
+            # Starte SearchWorker mit bereinigtem Query
             self.search_worker = SearchWorker(message, max_results=5)
             self.search_worker.finished.connect(self.on_search_finished)
             self.search_worker.error.connect(self.on_search_error)
@@ -537,15 +515,14 @@ class ChatWindow(QMainWindow):
             self._pending_user_message = message
             self._start_llm_request(message, "")
     
-    def on_search_finished(self, search_results: Dict):
+    def on_search_finished(self, search_results: dict):
         """Wird aufgerufen wenn die Internet-Suche fertig ist"""
-        from modules.logger import astra_logger
-        
         search_context = ""
         
         if search_results.get('erfolg'):
             zusammenfassung = search_results.get('zusammenfassung', '')
-            astra_logger.info(f"✅ Suche erfolgreich: {zusammenfassung[:100]}...")
+            num_results = search_results.get('anzahl_ergebnisse', 0)
+            astra_logger.info(f"✅ Suche erfolgreich: {num_results} Ergebnisse gefunden")
             
             # Formatiere die Zusammenfassung besser für die KI
             search_context = (
@@ -554,33 +531,37 @@ class ChatWindow(QMainWindow):
                 f"[END SEARCH RESULTS]\n\n"
             )
             
-            # Entferne "Suche im Internet..." Bubble
-            html = self.chat_display.toHtml()
-            html = html.replace('🔍 Suche im Internet...', '')
-            self.chat_display.setHtml(html)
-            astra_logger.info("✅ Suche-Bubble entfernt, starte LLM...")
+            # Ersetze alte Such-Bubble mit Erfolgs-Nachricht
+            self.chat_display.update_search_bubble(
+                '⏳ Suche im Internet nach relevanten Informationen...',
+                f'✅ Suche erfolgreich - <b>{num_results}</b> Ergebnisse gefunden'
+            )
+            astra_logger.info("✅ Suche-Bubble aktualisiert, starte LLM...")
         else:
             # Fehler bei Suche
             error_msg = search_results.get('zusammenfassung', 'Unbekannter Fehler')
             astra_logger.warning(f"⚠️ Suche fehlgeschlagen: {error_msg}")
             
-            search_context = f"\n[SEARCH ERROR: {error_msg}]\n"
-            html = self.chat_display.toHtml()
-            html = html.replace('🔍 Suche im Internet...', '')
-            self.chat_display.setHtml(html)
+            search_context = f"\n[SEARCH ERROR: {error_msg} - PROCEEDING WITHOUT SEARCH RESULTS]\n"
+            
+            self.chat_display.update_search_bubble(
+                '⏳ Suche im Internet nach relevanten Informationen...',
+                f'⚠️ Suche konnte nicht durchgeführt werden<br/><b>Grund:</b> {error_msg}'
+            )
+            astra_logger.warning("⚠️ Suche fehlgeschlagen, starte LLM ohne Suchergebnisse...")
         
-        # Starte LLM mit Such-Ergebnissen
+        # Starte LLM mit Such-Ergebnissen (oder Fehler-Info)
         self._start_llm_request(self._pending_user_message, search_context)
     
     def on_search_error(self, error: str):
         """Wird aufgerufen wenn Suche fehlschlägt"""
-        from modules.logger import astra_logger
-        
         astra_logger.error(f"❌ SearchWorker Error: {error}")
         
-        html = self.chat_display.toHtml()
-        html = html.replace('🔍 Suche im Internet...', '')
-        self.chat_display.setHtml(html)
+        # Besseres Error Communication für User
+        self.chat_display.update_search_bubble(
+            '⏳ Suche im Internet nach relevanten Informationen...',
+            f'❌ Suche fehlgeschlagen<br/><b>Fehler:</b> {error}'
+        )
         
         search_context = f"\n[INTERNET SEARCH FAILED: {error}]\n"
         
@@ -590,113 +571,294 @@ class ChatWindow(QMainWindow):
     
     def _start_llm_request(self, user_message: str, search_context: str = ""):
         """Startet die LLM-Anfrage mit optionalem Such-Kontext"""
-        # Loading
-        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.insertHtml(self._assistant_bubble_html('🤖 ⏳ Im Gedanken...'))
-        self.is_waiting_for_response = True
-        
-        # Vorbereitung der Messages
-        chats = self.db.get_all_chats()
-        chat_history = chats.get(self.current_chat, [])
-        
-        # Erweitere die Benutzer-Nachricht mit Such-Kontext falls vorhanden
-        user_content = user_message
-        if search_context:
-            user_content = f"{user_message}{search_context}"
-        
-        messages = [
-            {"role": "system", "content": self.memory_manager.get_system_prompt()}
-        ] + chat_history + [
-            {"role": "user", "content": user_content}
-        ]
-        
-        # Start LLM-STREAMING Worker
-        selected_model = getattr(self, '_selected_model', DEFAULT_MODEL)
-        temperature = self.settings_manager.get('temperature', 0.7)
-        self.llm_worker = LLMStreamWorker(
-            self.ollama,
-            selected_model,
-            messages,
-            temperature
-        )
-        self.llm_worker.chunk_received.connect(self.on_chunk_received)
-        self.llm_worker.finished.connect(self.on_response_received)
-        self.llm_worker.error.connect(self.on_response_error)
-        self.llm_worker.start()
+        try:
+            # 🔥 WICHTIG: Stoppe alte Worker SOFORT!
+            if self.llm_worker and self.llm_worker.isRunning():
+                astra_logger.info("⚠️ Stoppe alten LLM Worker...")
+                self.llm_worker.quit()
+                self.llm_worker.wait(500)
+            
+            if self.formatter_worker and self.formatter_worker.isRunning():
+                self.formatter_worker.quit()
+                self.formatter_worker.wait(500)
+            
+            if self.search_worker and self.search_worker.isRunning():
+                self.search_worker.quit()
+                self.search_worker.wait(500)
+            
+            # 🔥 KEINE Placeholder more! Streaming zeigt sofort erste Chunk!
+            self.is_waiting_for_response = True
+            self._streaming_started = False  # Reset Flag
+            self._current_response = ""  # Reset Response Buffer
+            astra_logger.info("🔥 Starting LLM Request...")
+            
+            # ⚡ OPTIMIERT: Lade NUR den aktuellen Chat, limitiert auf letzte 30 Nachrichten!
+            chat_history = self.db.get_chat_messages(self.current_chat)
+            # 🔥 WICHTIG: Zu viele Messages = Ollama wird extrem langsam!
+            # Limitiere auf die letzten 30 Messages (15 Konversations-Paare)
+            if len(chat_history) > 30:
+                chat_history = chat_history[-30:]
+            astra_logger.info(f"📚 Loaded {len(chat_history)} messages for LLM context")
+            
+            # Erweitere die Benutzer-Nachricht mit Such-Kontext falls vorhanden
+            user_content = user_message
+            if search_context:
+                user_content = f"{user_message}{search_context}"
+            
+            # ⚡ SICHERHEIT: get_system_prompt() KANN FEHLER WERFEN!
+            try:
+                system_prompt = self.memory_manager.get_system_prompt()
+            except Exception as e:
+                astra_logger.error(f"⚠️  get_system_prompt() fehlgeschlagen: {e}")
+                system_prompt = "Du bist ein hilfreicher KI-Assistent. Antworte auf Deutsch."
+            
+            # WICHTIG: Nur role+content an Ollama senden (timestamp rausfiltern!)
+            clean_history = [{"role": m["role"], "content": m["content"]} for m in chat_history]
+            messages = [
+                {"role": "system", "content": system_prompt}
+            ] + clean_history + [
+                {"role": "user", "content": user_content}
+            ]
+            
+            # Start LLM-STREAMING Worker
+            selected_model = getattr(self, '_selected_model', DEFAULT_MODEL)
+            temperature = self.settings_manager.get('temperature', 0.7)
+            
+            astra_logger.info(f"🚀 Creating LLMStreamWorker for model={selected_model}, temp={temperature}")
+            self.llm_worker = LLMStreamWorker(
+                self.ollama,
+                selected_model,
+                messages,
+                temperature
+            )
+            self.llm_worker.chunk_received.connect(self.on_chunk_received)
+            self.llm_worker.finished.connect(self.on_response_received)
+            self.llm_worker.error.connect(self.on_response_error)
+            
+            # Sofort sichtbares Feedback: "Denkt nach..."-Bubble + STOP-Button
+            self.send_btn.setText("⏹ STOP")
+            self.message_input.setEnabled(False)
+            self.chat_display.start_streaming_bubble(source="llm")
+            self.chat_display.update_streaming_bubble(
+                '<span style="color:#888;font-style:italic;">Astra denkt nach...</span>'
+            )
+            
+            astra_logger.info("🚀 Starting LLMStreamWorker thread...")
+            self.llm_worker.start()
+            astra_logger.info("✅ LLMStreamWorker started!")
+        except Exception as e:
+            astra_logger.error(f"❌ Fehler in _start_llm_request: {e}", exc_info=True)
+            self.on_response_error(f"Kritischer Fehler beim Starten: {e}")
     
-    def on_chunk_received(self, chunk: str):
-        """Wird aufgerufen wenn ein Text-Chunk vom LLM kommt"""
-        if not self._streaming_started:
-            # Erster Chunk: Entferne das "Im Gedanken..." Placeholder
-            self._streaming_started = True
-            html = self.chat_display.toHtml()
-            # Entferne den Placeholder
-            html = html.replace('🤖 ⏳ Im Gedanken...', '')
-            # WICHTIG: Das aktualisierte HTML zurücksetzen
-            self.chat_display.setHtml(html)
-            # Initialisiere den Response Buffer
-            self._current_response = ""
+    def _stop_generation(self):
+        """Stoppt die aktuelle KI-Generierung"""
+        astra_logger.info("⏹️ Generation wird gestoppt...")
         
-        # Sammle den Chunk
-        from html import escape
-        self._current_response += chunk
-        safe_response = escape(self._current_response)
+        self._stop_stream_timer()
         
-        # Aktualisiere das Chat-Display mit dem bisherigen Response
-        # Entferne das letzte Bubble und setze es mit dem neuen Content neu
-        html = self.chat_display.toHtml()
+        if self.llm_worker and self.llm_worker.isRunning():
+            self.llm_worker.quit()
+            self.llm_worker.wait(1000)
         
-        # Entferne das letzte (unvollständige) Assistant-Bubble
-        # Suche nach dem letzten <table> und entferne alles danach
-        last_table_idx = html.rfind('<table')
-        if last_table_idx != -1:
-            last_table_end = html.rfind('</table>') + len('</table>')
-            if last_table_end > last_table_idx:
-                # Entferne das letzte Bubble
-                html = html[:last_table_idx]
-        
-        # Füge ein neues Bubble mit dem aktuellen Response hinzu
-        html += self._assistant_bubble_html(safe_response)
-        self.chat_display.setHtml(html)
-        
-        # Scrolle zum Ende
-        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.ensureCursorVisible()
-    
-    def on_response_received(self, response: str):
-        """Wird aufgerufen wenn die komplette Antwort fertig ist"""
         self.is_waiting_for_response = False
         self.message_input.setEnabled(True)
         self._streaming_started = False
+        self.send_btn.setText("⚡ SENDEN")
         
-        memory_texts = self.memory_manager.extract_memory_from_response(response)
-        for memory_text in memory_texts:
-            if memory_text:
-                self.memory_manager.learn(memory_text)
+        # Zeige partielle Antwort mit Rich-Formatting
+        if self._current_response:
+            from modules.ui.workers import RichFormatterWorker
+            partial = self._current_response + "\n\n⏹️ *Generierung abgebrochen*"
+            self.formatter_worker = RichFormatterWorker(
+                partial, source="llm", text_size=self.current_text_size
+            )
+            self.formatter_worker.finished.connect(self._on_formatted_response_final)
+            self.formatter_worker.error.connect(self._on_formatter_error)
+            self.formatter_worker.start()
+            
+            # Partielle Antwort speichern
+            clean = self.memory_manager.remove_tags_from_response(self._current_response)
+            self.db.save_message(self.current_chat, "assistant", clean + " [abgebrochen]")
+        else:
+            # Keine Chunks empfangen — "Denkt nach..." Bubble durch Abbruch ersetzen
+            self.chat_display.finish_streaming_bubble(
+                '<span style="color:#888;font-style:italic;">⏹️ Generierung abgebrochen</span>',
+                source="llm"
+            )
         
-        clean_response = self.memory_manager.remove_tags_from_response(response)
-        self.db.save_message(self.current_chat, "assistant", clean_response)
+        astra_logger.info("⏹️ Generation gestoppt")
+    
+    def on_chunk_received(self, chunk: str):
+        """Sammelt Chunks und zeigt Echtzeit-Streaming-Text."""
+        try:
+            self._current_response += chunk
+            
+            if not self._streaming_started:
+                # Erstes Chunk — Streaming-Bubble existiert schon ("Denkt nach...")
+                # Jetzt Timer starten für Echtzeit-Update
+                self._streaming_started = True
+                astra_logger.info("🔄 Streaming started, Echtzeit-Anzeige aktiv")
+                
+                # Sofort erste Anzeige (ersetzt "Denkt nach...")
+                self._update_stream_display()
+                
+                # Timer: Aktualisiere Display alle 120ms
+                self._stream_timer = QTimer()
+                self._stream_timer.timeout.connect(self._update_stream_display)
+                self._stream_timer.start(120)
+                
+        except Exception as e:
+            astra_logger.error(f"❌ Fehler in on_chunk_received: {e}", exc_info=True)
+    
+    def _update_stream_display(self):
+        """Aktualisiert die Streaming-Bubble mit dem bisherigen Text."""
+        if not self._current_response:
+            return
+        try:
+            # Escape für HTML-Anzeige, dann einfache Zeilenumbrüche
+            safe = html_escape(self._current_response)
+            safe = safe.replace('\n', '<br/>')
+            self.chat_display.update_streaming_bubble(safe)
+        except Exception as e:
+            astra_logger.error(f"Stream-Display Update Fehler: {e}")
+    
+    def _stop_stream_timer(self):
+        """Stoppt den Streaming-Timer sauber."""
+        if self._stream_timer:
+            self._stream_timer.stop()
+            self._stream_timer = None
+
+    def on_response_received(self, response: str):
+        """Stream fertig → Streaming-Bubble durch Rich-formatierte Version ersetzen."""
+        try:
+            astra_logger.info(f"✅ Stream fertig: {len(self._current_response)} Zeichen")
+            
+            # Timer stoppen
+            self._stop_stream_timer()
+            
+            # UI-State zurück
+            self.is_waiting_for_response = False
+            self.message_input.setEnabled(True)
+            self._streaming_started = False
+            self.send_btn.setText("⚡ SENDEN")
+            
+            full_response = self._current_response
+            
+            # ⚡ BACKGROUND: Memory & Speichern (blockiert UI nicht!)
+            memory_enabled = self.settings_manager.get('memory_enabled', True)
+            def save_and_extract():
+                try:
+                    if memory_enabled:
+                        memory_texts = self.memory_manager.extract_memory_from_response(full_response)
+                        for i, memory_text in enumerate(memory_texts, 1):
+                            if memory_text and len(memory_text) > 2:
+                                try:
+                                    self.memory_manager.learn(memory_text)
+                                    astra_logger.info(f"✅ Memory saved: '{memory_text[:60]}'")
+                                except Exception as e:
+                                    astra_logger.error(f"Memory save error: {e}")
+                    
+                    clean_response = self.memory_manager.remove_tags_from_response(full_response)
+                    self.db.save_message(self.current_chat, "assistant", clean_response)
+                    astra_logger.info("💾 Response saved to database")
+                except Exception as e:
+                    astra_logger.error(f"Save Error: {e}")
+            
+            Thread(target=save_and_extract, daemon=True).start()
+            
+            # Streaming-Bubble durch Rich-formatierte Version ersetzen
+            from modules.ui.workers import RichFormatterWorker
+            self.formatter_worker = RichFormatterWorker(
+                full_response,
+                source="llm",
+                text_size=self.current_text_size
+            )
+            self.formatter_worker.finished.connect(self._on_formatted_response_final)
+            self.formatter_worker.error.connect(self._on_formatter_error)
+            self.formatter_worker.start()
+            
+        except Exception as e:
+            msg = f"❌ on_response_received Error: {e}"
+            astra_logger.error(msg, exc_info=True)
+            self.on_response_error(msg)
+    
+    def _on_formatted_response_final(self, formatted_html: str):
+        """Einmalige Anzeige der komplett formatierten Response."""
+        try:
+            astra_logger.info("✅ Response formatted, displaying...")
+            
+            # Ersetze Streaming-Bubble mit formatierter Version
+            self.chat_display.finish_streaming_bubble(formatted_html, source="llm")
+            
+            astra_logger.info("✅ Response displayed")
+            
+        except Exception as e:
+            msg = f"❌ Formatting Error: {e}"
+            astra_logger.error(msg, exc_info=True)
+    
+    def _on_formatter_error(self, error: str):
+        """Fallback wenn RichFormatter fehlschlägt - zeige Error-Bubble"""
+        astra_logger.warning(f"⚠️ RichFormatter Error: {error}, nutze Fallback")
+        
+        fallback_text = html_escape(f"[Formatierungsfehler]\n\n{self._current_response[:200]}...")
+        fallback_text = fallback_text.replace('\n', '<br/>')
+        self.chat_display.finish_streaming_bubble(fallback_text, source="llm")
     
     def on_response_error(self, error: str):
         """Wird aufgerufen bei Fehler"""
+        self._stop_stream_timer()
+        
         self.is_waiting_for_response = False
         self.message_input.setEnabled(True)
+        self.send_btn.setText("⚡ SENDEN")
         
-        self.chat_display.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat_display.insertHtml(self._assistant_bubble_html(f'❌ {error}'))
+        error_text = html_escape(f"❌ Fehler bei der KI-Antwort\n\nFehler: {error}")
+        error_text = error_text.replace('\n', '<br/>')
+        
+        # Streaming-Bubble existiert immer (erstellt in _start_llm_request)
+        # → Ersetze "Denkt nach..." / Streaming-Text durch Fehlermeldung
+        self.chat_display.finish_streaming_bubble(error_text, source="llm")
+        
+        self._streaming_started = False
+        astra_logger.error(f"❌ LLM Error: {error}")
+    
+    def export_current_chat(self):
+        """Exportiert den aktuellen Chat als Markdown-Datei"""
+        if not self.current_chat:
+            QMessageBox.warning(self, "⚠️", "Bitte wähle erst einen Chat aus")
+            return
+        
+        export_text = self.db.export_chat(self.current_chat)
+        if not export_text:
+            QMessageBox.warning(self, "⚠️", "Chat ist leer")
+            return
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Chat exportieren", f"{self.current_chat}.md",
+            "Markdown (*.md);;Text (*.txt)"
+        )
+        
+        if file_path:
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(export_text)
+                QMessageBox.information(self, "✅", f"Chat exportiert nach:\n{file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "❌", f"Fehler beim Exportieren: {e}")
     
     def create_new_chat(self):
         """Erstellt einen neuen Chat"""
         from datetime import datetime
         
-        chats = self.db.get_all_chats()
+        # ⚡ OPTIMIERT: Nur Chat-Namen laden, nicht die Messages!
+        existing_names = self.db.get_all_chat_names()
         
         timestamp = datetime.now().strftime("%d.%m.%Y %H:%M")
         new_name = f"Chat {timestamp}"
         
         counter = 1
         original_name = new_name
-        while new_name in chats:
+        while new_name in existing_names:
             new_name = f"{original_name} ({counter})"
             counter += 1
         
@@ -709,6 +871,12 @@ class ChatWindow(QMainWindow):
 
     def closeEvent(self, event):
         """Cleanup beim Beenden - schnell und effizient"""
+        # Stoppe Stream-Timer
+        try:
+            self._stop_stream_timer()
+        except Exception:
+            pass
+        
         # Stoppe Timer sofort
         try:
             if hasattr(self, 'status_timer'):
@@ -764,7 +932,7 @@ class ChatWindow(QMainWindow):
                     self.chat_list.setCurrentRow(0)
                     self.on_chat_selected(self.chat_list.item(0))
                 else:
-                    self.chat_display.setHtml("<center style='margin-top: 50px; color: #999;'>Keine Chats vorhanden</center>")
+                    self.chat_display.show_empty_state("Keine Chats vorhanden")
                     self.current_chat = None
                 QMessageBox.information(self, "✅", "Chat erfolgreich gelöscht")
             else:
@@ -789,18 +957,8 @@ class ChatWindow(QMainWindow):
         """Wird aufgerufen wenn die Textgröße geändert wird"""
         self.current_text_size = new_size
         
-        # Aktualisiere Chat-Display Fontgröße
-        self.chat_display.setStyleSheet(
-            f"QTextEdit {{ "
-            f"background: {COLORS['background']}; "
-            f"color: {COLORS['text']}; "
-            f"border: 2px solid {COLORS['primary']}33; "
-            f"padding: 16px; "
-            f"border-radius: 14px; "
-            f"font-size: {new_size}pt; "
-            f"line-height: 1.6; "
-            f"}}"
-        )
+        # Aktualisiere Chat-Display Textgröße
+        self.chat_display.set_text_size(new_size)
         
         # Aktualisiere den Chat im Display durch Neuzeichnen
         if self.current_chat:

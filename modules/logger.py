@@ -9,7 +9,6 @@ import logging
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 from logging.handlers import RotatingFileHandler
 
 # Log-Verzeichnis
@@ -108,7 +107,7 @@ def log_warning(message: str, module: str = 'CORE'):
     astra_logger.warning(f"[{module}] {message}")
 
 
-def log_error(message: str, module: str = 'CORE', exception: Optional[Exception] = None):
+def log_error(message: str, module: str = 'CORE', exception: Exception = None):
     """Log Fehler"""
     if exception:
         astra_logger.error(f"[{module}] {message}", exc_info=exception)

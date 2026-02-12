@@ -2,7 +2,7 @@
 ASTRA AI - Modul-Initializer
 """
 
-__version__ = "0.2"
+__version__ = "2.0"
 __author__ = "Astra Project Contributors"
 __description__ = "ASTRA AI - Neural Intelligence Desktop Application"
 

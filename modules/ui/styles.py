@@ -442,29 +442,6 @@ class StyleSheet:
         """
 
     @staticmethod
-    def get_chat_bubble_user_style() -> str:
-        """Styling für User-Chat-Bubbles"""
-        return f"""
-        color: white;
-        background-color: {COLORS['primary']};
-        border-radius: 20px;
-        padding: 12px;
-        margin: 6px;
-        """
-
-    @staticmethod
-    def get_chat_bubble_assistant_style() -> str:
-        """Styling für KI-Chat-Bubbles"""
-        return f"""
-        color: {COLORS['text']};
-        background-color: {COLORS['surface']};
-        border: 2px solid {COLORS['primary']};
-        border-radius: 20px;
-        padding: 12px;
-        margin: 6px;
-        """
-
-    @staticmethod
     def get_checkbox_style() -> str:
         """Styling für Checkboxen in den Einstellungen"""
         return (

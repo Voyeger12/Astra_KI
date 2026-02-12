@@ -2,46 +2,28 @@
 ASTRA AI - Memory Manager
 =========================
 Verwaltet Langzeitgedächtnis und System-Prompts
-Intelligente automatische Erkennung von persönlichen Informationen
-Hybrid Mode: Auto-Learning + Structured Manual Memory
+Memory wird AUSSCHLIESSLICH über [MERKEN:...]-Tags oder "Merke:"-Kommandos gespeichert
 """
 
-import re
-import json
+import time
+from pathlib import Path
 from config import SYSTEM_PROMPT_TEMPLATE
 from modules.database import Database
 
 
 class MemoryManager:
-    """Verwaltet Memory und System-Prompts mit intelligenter Auto-Erkennung"""
-    
-    # Patterns für automatische Memory-Erkennung (Deutsch + Englisch)
-    # WICHTIG: [\w\s\-äöüÄÖÜß] erlaubt Umlaute und Wörter mit Bindestrichen
-    MEMORY_PATTERNS = {
-        # NAME: Nur eindeutige Patterns für Namen (nicht "ich bin" - zu viel Noise!)
-        r"(?:ich hei[ß]e|mein name ist|my name is|call me)\s+([A-Z][a-zäöüß\-]*(?:\s+[A-Z][a-zäöüß\-]*)*)": ("name", "personal"),
-        # AGE: "ich bin X Jahre alt"
-        r"(?:ich bin|i am|i\'m)\s+(\d+)\s+(?:jahr|Jahre|years|year)(?:\s+alt)?": ("age", "personal"),
-        # LOCATION: "ich lebe/wohne in X"
-        r"(?:ich lebe|ich wohne|i live|i\'m from)\s+(?:in\s+)?([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("location", "personal"),
-        # LIKES: "ich mag X"
-        r"(?:ich mag|i like|i love|mein lieblings|my favorite|my favorit)\s+([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|und|$)": ("likes", "personal"),
-        # RELATIONSHIP: "ich bin verheiratet/single/..."
-        r"(?:ich bin|i\'m|i am)\s+(?:verheiratet|married|ledig|single|in einer beziehung|in a relationship|verlobt)": ("relationship", "personal"),
-        # PROFESSION: "ich mache/studiere X als Y"
-        r"(?:ich mache|ich mach|i\'m doing|i do|i\'m studying|ich studiere)\s+(?:eine\s+)?(?:umschulung\s+)?(?:als\s+)?([\w\s\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("profession", "personal"),
-        # HOBBIES: "meine hobbys sind X, Y, Z"
-        r"(?:meine hobbys|my hobbies|meine interessen|my interests|meine hobby|meine hobby)\s+(?:sind\s+)?([\w\s,\-äöüÄÖÜß]+?)(?:\.|,|!|$)": ("hobbies", "personal"),
-        # CREATOR: "du bist von X erschaffen"
-        r"(?:du bist|you are|you\'re)\s+(?:von|from)?\s+([\w\s\-äöüÄÖÜß]+?)\s+(?:erschaffen|created|gebaut|built)": ("creator", "personal"),
-    }
+    """Verwaltet Memory und System-Prompts"""
     
     def __init__(self, db: Database):
         self.db = db
+        # ⚡ Cache-Variablen initialisieren
+        self._cached_system_prompt = None
+        self._last_prompt_time = None
     
     def learn(self, information: str, category: str = "general") -> bool:
         """
-        Speichert neue Information im Gedächtnis
+        Speichert neue Information im Gedächtnis.
+        Enforced Memory-Limit automatisch (älteste Einträge werden entfernt).
         
         Args:
             information: Die zu speichernde Information
@@ -50,75 +32,22 @@ class MemoryManager:
         Returns:
             True bei Erfolg, False bei Fehler
         """
-        return self.db.add_memory(information, category)
+        # 🔥 WICHTIG: Cache invalidieren wenn neue Memory gespeichert wird!
+        self._cached_system_prompt = None
+        self._last_prompt_time = None
+        
+        result = self.db.add_memory(information, category)
+        
+        # Memory-Limit enforcing: Älteste Einträge auto-löschen
+        if result:
+            from config import MAX_MEMORY_ENTRIES
+            self.db.trim_old_memory(MAX_MEMORY_ENTRIES)
+        
+        return result
     
-    def extract_personal_info(self, text: str) -> dict:
-        """
-        Extrahiert automatisch persönliche Informationen aus Text
-        
-        Args:
-            text: Der zu analysierende Text
-        
-        Returns:
-            Dict mit extrahierten Informationen {category: (value, type)}
-        """
-        extracted = {}
-        
-        for pattern, (category, info_type) in self.MEMORY_PATTERNS.items():
-            matches = re.finditer(pattern, text, re.IGNORECASE)
-            for match in matches:
-                if category not in extracted:  # Nur erste Übereinstimmung
-                    value = match.group(1).strip() if match.lastindex else match.group(0).strip()
-                    if value and len(value) > 1:
-                        extracted[category] = {
-                            "value": value,
-                            "type": info_type
-                        }
-        
-        return extracted
-    
-    def auto_learn_from_message(self, message: str) -> list:
-        """
-        Versucht automatisch persönliche Informationen zu speichern
-        
-        Args:
-            message: Die Benutzer-Nachricht
-        
-        Returns:
-            Liste mit (category, value) für gespeicherte Informationen
-        """
-        extracted = self.extract_personal_info(message)
-        saved = []
-        
-        for category, info in extracted.items():
-            value = info["value"]
-            if value and len(value) > 1:
-                # Formatiere die Information
-                formatted = self._format_memory(category, value)
-                if self.learn(formatted, info["type"]):
-                    saved.append((category, value))
-        
-        return saved
-    
-    def _format_memory(self, category: str, value: str) -> str:
-        """Formatiert Informationen für Storage"""
-        formatting = {
-            "name": f"Name: {value}",
-            "age": f"Alter: {value} Jahre",
-            "location": f"Wohnort: {value}",
-            "likes": f"Mag: {value}",
-            "relationship": f"Beziehungsstatus: {value}",
-            "profession": f"Beruf/Ausbildung: {value}",
-            "hobbies": f"Hobbys: {value}",
-            "creator": f"Ersteller/in: {value}",
-        }
-        return formatting.get(category, f"{category}: {value}")
     
     def get_memory_string(self) -> str:
-        """
-        Holt das gesamte Gedächtnis als deduplizierter String
-        (optimiert für LLM System-Prompt)
-        """
+        """Holt das gesamte Gedächtnis als deduplizierter String"""
         return self.get_memory_string_deduplicated()
     
     def clear_memory(self) -> bool:
@@ -128,29 +57,68 @@ class MemoryManager:
     def get_system_prompt(self) -> str:
         """
         Generiert den System-Prompt mit integriertem Memory
+        ⚡ GECACHT für bessere Performance!
         Lädt optional persona.txt wenn vorhanden
         
         Returns:
             Vollständiger System-Prompt für die KI
         """
-        from pathlib import Path
-        
-        memory = self.get_memory_string()
-        
-        # Versuche persona.txt zu laden (optional, Benutzer-Konfigurierbar)
-        persona_path = Path(__file__).parent.parent / "persona.txt"
-        if persona_path.exists():
+
+        try:
+            # ⚡ CACHING: Wenn prompt nicht älter als 5s ist, nutze Cache  
+            current_time = time.time()
+            # ✅ Sicher: Prüfe OB Cache-Variablen existieren UND nicht None sind
+            cached = getattr(self, '_cached_system_prompt', None)
+            last_time = getattr(self, '_last_prompt_time', None)
+            
+            if cached is not None and last_time is not None:
+                try:
+                    if current_time - last_time < 5:
+                        return cached
+                except (TypeError, ValueError):
+                    # Cache ist kaputt, ignoriert
+                    pass
+            
+            # Versuche Memory zu laden
             try:
-                with open(persona_path, 'r', encoding='utf-8') as f:
-                    persona_content = f.read()
-                    # Ersetze {wissen} Platzhalter mit Memory
-                    return persona_content.format(wissen=memory)
-            except Exception:
-                # Fallback auf Standard-Template
-                pass
-        
-        # Fallback auf Standard SYSTEM_PROMPT_TEMPLATE
-        return SYSTEM_PROMPT_TEMPLATE.format(memory=memory)
+                memory = self.get_memory_string()
+            except Exception as e:
+                print(f"⚠️  Fehler bei get_memory_string(): {e}")
+                memory = ""
+            
+            # Versuche persona.txt zu laden (optional)
+            result = None
+            persona_path = Path(__file__).parent.parent / "persona.txt"
+            if persona_path.exists():
+                try:
+                    with open(persona_path, 'r', encoding='utf-8') as f:
+                        persona_content = f.read()
+                        result = persona_content.format(wissen=memory)
+                except Exception as e:
+                    print(f"⚠️  Fehler bei persona.txt: {e}")
+                    result = None
+            
+            # Fallback auf Standard-Template
+            if result is None:
+                try:
+                    result = SYSTEM_PROMPT_TEMPLATE.format(memory=memory)
+                except Exception as e:
+                    print(f"⚠️  Fehler bei SYSTEM_PROMPT_TEMPLATE.format(): {e}")
+                    # LETZTER FALLBACK: Gib einfach den Template direkt zurück
+                    result = SYSTEM_PROMPT_TEMPLATE
+            
+            # ⚡ Cache das Ergebnis
+            self._cached_system_prompt = result
+            self._last_prompt_time = current_time
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ KRITISCHER FEHLER in get_system_prompt(): {e}")
+            import traceback
+            traceback.print_exc()
+            # ABSOLUTE ZURÜCKFALL: Gib einen minimalen Prompt zurück
+            return "Du bist ein hilfreicher KI-Assistent. Antworte auf Deutsch."
     
     def extract_memory_from_response(self, text: str) -> list:
         """
@@ -180,24 +148,6 @@ class MemoryManager:
         
         return memories
     
-    def extract_search_query(self, text: str) -> str:
-        """
-        Extrahiert [SUCHE: ...] Tag aus Response
-        
-        Returns:
-            Extrahierter Suchbegriff oder None
-        """
-        if "[SUCHE:" not in text:
-            return None
-        
-        start = text.find("[SUCHE:") + 7
-        end = text.find("]", start)
-        
-        if end != -1:
-            return text[start:end].strip()
-        
-        return None
-    
     def remove_tags_from_response(self, text: str) -> str:
         """Entfernt [MERKEN:...] und [SUCHE:...] Tags aus der Response"""
         # Entferne MERKEN-Tags
@@ -220,81 +170,44 @@ class MemoryManager:
         
         return text.strip()
     
-    # ========================================================================
-    # HYBRID MODE: Strukturiertes Merken (nicht Auto-Learning)
-    # ========================================================================
+    def get_memory_entries(self) -> list:
+        """Gibt alle Memory-Einträge als strukturierte Daten zurück (für Settings-UI)"""
+        return self.db.get_memory_entries()
     
-    def smart_learn(self, information: str) -> bool:
-        """
-        Intelligentes strukturiertes Lernen mit Deduplizierung
-        
-        Used für "Merke:" Kommandos - nicht für Auto-Learning
-        Speichert strukturiert und dedupliziert bestehende Einträge
-        
-        Args:
-            information: Die zu speichernde Information
-        
-        Returns:
-            True bei Erfolg
-        """
-        # Versuche zu kategorisieren
-        category = self._infer_category(information)
-        
-        # Speichere mit Kategorie
-        return self.db.add_memory(information, category)
-    
-    def _infer_category(self, text: str) -> str:
-        """Versucht die beste Kategorie für die Information zu erraten"""
-        text_lower = text.lower()
-        
-        if any(word in text_lower for word in ["name", "heiße", "ich bin", "call me"]):
-            return "personal"
-        elif any(word in text_lower for word in ["wohne", "lebe", "stadt", "ort", "land"]):
-            return "personal"
-        elif any(word in text_lower for word in ["alt", "jahre", "age", "year"]):
-            return "personal"
-        elif any(word in text_lower for word in ["mag", "like", "liebe", "hobby", "interest"]):
-            return "personal"
-        elif any(word in text_lower for word in ["beruf", "job", "arbeit", "work", "profession"]):
-            return "personal"
-        else:
-            return "general"
+    def delete_memory(self, memory_id: int) -> bool:
+        """Löscht einen einzelnen Memory-Eintrag"""
+        self._cached_system_prompt = None
+        self._last_prompt_time = None
+        return self.db.delete_memory_by_id(memory_id)
     
     def get_memory_string_deduplicated(self) -> str:
         """
-        Holt Memory mit intelligenter Deduplizierung
-        Zeigt nur neueste Version pro Info-Typ
+        Holt Memory mit echter Content-basierter Deduplizierung.
+        Entfernt exakte Duplikate, behält neueste Version.
         
         Returns:
             Formatierter, deduplizierter Memory-String
         """
-        # Direkt von DB laden, nicht über get_memory_string()!
-        memory = self.db.get_memory()
-        
-        if "Noch keine" in memory:
-            return memory
-        
-        # Parse Einträge
-        lines = memory.split("\n")
-        seen_categories = {}
-        result = []
-        
-        # Gehe reverse (neueste zuerst)
-        for line in reversed(lines):
-            if not line.strip():
-                continue
+        try:
+            entries = self.db.get_memory_entries()
             
-            # Extrahiere Kategorie (erste paar Worte)
-            words = line.split("]", 1)[-1].strip().split(":")
-            if len(words) > 0:
-                category_hint = words[0].lower()
-                
-                # Ignoriere Duplikate
-                if category_hint not in seen_categories:
-                    result.append(line)
-                    seen_categories[category_hint] = True
+            if not entries:
+                return "Noch keine Gedächtnisfragmente vorhanden."
+            
+            # Echte Deduplizierung: Normalisierter Content als Key
+            # Spätere Einträge überschreiben frühere (neueste Version gewinnt)
+            seen = {}
+            for entry in entries:
+                normalized = entry['content'].strip().lower()
+                seen[normalized] = entry
+            
+            unique = sorted(seen.values(), key=lambda x: x['id'])
+            
+            if not unique:
+                return "Noch keine Gedächtnisfragmente vorhanden."
+            
+            return "\n".join(f"[{e['created_at']}] {e['content']}" for e in unique)
         
-        if not result:
-            return "Noch keine Gedächtnisfragmente vorhanden."
-        
-        return "\n".join(reversed(result))  # Richtige Reihenfolge zurück
+        except Exception as e:
+            print(f"⚠️  Fehler bei get_memory_string_deduplicated(): {e}")
+            return "Fehler beim Memory laden - Weitermachen ohne Memory"

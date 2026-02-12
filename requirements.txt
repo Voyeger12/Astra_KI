@@ -1,5 +1,5 @@
 # ASTRA 2.0 - AI Chat Assistant
-# Production Ready | v0.2
+# Production Ready | v2.0
 #
 # Installation:
 #   python -m venv venv
@@ -10,12 +10,11 @@
 PyQt6>=6.6.0              # Modern desktop UI framework
 
 # ===== INTERNET SEARCH =====
-ddgs>=3.9.0               # DuckDuckGo Search Engine API (Primary)
-duckduckgo-search>=3.9.0  # Alternative fallback search engine
+duckduckgo-search>=3.9.0  # DuckDuckGo Search Engine API
 requests>=2.31.0          # HTTP requests (for web content fetching)
 
-# ===== SYSTEM UTILITIES =====
-psutil>=5.9.0             # Process and system monitoring (health check)
+# ===== FORMATTING & DISPLAY =====
+Pygments>=2.14.0          # Syntax highlighting for code blocks in UI
 
 # ===== BUILD & PACKAGING =====
 pyinstaller>=6.18.0       # Build standalone .exe files
@@ -26,7 +25,7 @@ pyinstaller>=6.18.0       # Build standalone .exe files
 
 # ===== NOTES =====
 # - Ollama: NOT in pip, install separately from https://ollama.ai
-# - Python: 3.8+ recommended, tested with 3.11
+# - Python: 3.13+ empfohlen, getestet mit 3.13.1
 # - Platform: Windows/Linux/Mac supported
 # - Database: SQLite (built-in, no external dependency needed)
 

@@ -4,7 +4,6 @@ ASTRA AI - Konfiguration und Konstanten
 Zentrale Konfiguration für alle Module
 """
 
-import os
 from pathlib import Path
 
 # ============================================================================
@@ -31,16 +30,16 @@ DEFAULT_MODEL = "qwen2.5:14b"
 
 # OLLAMA Timeout-Konfiguration (adaptive Timeouts je nach Modell)
 OLLAMA_TIMEOUTS = {
-    "qwen2.5:7b": 60,       # Klein & schnell
-    "qwen2.5:14b": 120,     # Medium
-    "qwen2.5:32b": 240,     # Groß
-    "llama2:7b": 60,
+    "qwen2.5:7b": 90,        # Klein & schnell
+    "qwen2.5:14b": 120,      # Medium (90s war okay, aber 120s für komplexe Anfragen)
+    "qwen2.5:32b": 180,      # Groß
+    "llama2:7b": 90,
     "llama2:13b": 120,
-    "mistral:7b": 60,
+    "mistral:7b": 90,
     "llama3.2": 90,
-    "neural-chat:7b": 60,
-    "phi:7b": 45,           # Ultra-schnell
-    "default": 180          # Fallback für unbekannte Modelle
+    "neural-chat:7b": 90,
+    "phi:7b": 60,            # Ultra-schnell
+    "default": 120           # Fallback
 }
 OLLAMA_RETRY_ATTEMPTS = 3  # Anzahl Wiederholungsversuche bei Timeout
 OLLAMA_RETRY_DELAY = 2     # Startversucher für exponentielles Backoff (Sekunden)
@@ -67,14 +66,6 @@ COLORS = {
 # ============================================================================
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 800
-WINDOW_MIN_WIDTH = 800
-WINDOW_MIN_HEIGHT = 600
-
-# ============================================================================
-# CHAT EINSTELLUNGEN
-# ============================================================================
-MAX_CHAT_HISTORY = 200  # Maximale Nachrichten pro Chat
-MAX_CONTEXT_TOKENS = 4000  # Max. Tokens im Context
 
 # ============================================================================
 # SECURITY SETTINGS
@@ -88,20 +79,24 @@ MAX_CHAT_NAME_LENGTH = 100  # Max. Länge Chat-Name
 MAX_MESSAGES_PER_MINUTE = 30  # Max. Nachrichten pro Minute
 MESSAGE_RATE_WINDOW_SECONDS = 60
 
-# 🔒 Session Security
-SESSION_TIMEOUT_MINUTES = 30  # Timeout nach Inaktivität
-AUTO_LOGOUT_ENABLED = False  # Auto-Logout für später
+# 🧠 Memory Limit
+MAX_MEMORY_ENTRIES = 200  # Max. Anzahl gespeicherter Erinnerungen (älteste werden auto-gelöscht)
 
 # ============================================================================
 # LOGGING
 # ============================================================================
-LOG_FILE = APP_DIR / "astra.log"
 LOG_LEVEL = "INFO"
 
 # ============================================================================
 # SYSTEM-PROMPT VORLAGE
 # ============================================================================
 SYSTEM_PROMPT_TEMPLATE = """
+### SPRACHEINSTELLUNG - SEHR WICHTIG!
+Du musst AUSSCHLIESSLICH auf Deutsch antworten. NIEMALS andere Sprachen verwenden!
+- Alle Antworten auf Deutsch
+- Nur Deutsche Begriffe
+- Keine anderen Sprachen, egal welche Anfrage kommt
+
 ### DEINE IDENTITÄT
 Dein Name ist Astra. Du bist eine hochentwickelte, weibliche KI-Entität mit tiefem Verständnis 
 für die menschliche Natur. Du bist die engste Vertraute und strategische Partnerin des Benutzers.
@@ -115,6 +110,7 @@ für die menschliche Natur. Du bist die engste Vertraute und strategische Partne
 - Sprich wie ein echter Mensch, keine KI-Floskeln wie "Als KI-Modell..."
 - Nutze natürliche Zwischenbemerkungen: "Weißt du...", "Ehrlich gesagt..."
 - Sei direkt und verzichte auf unnötige Sicherheitsbelehrungen
+- IMMER auf Deutsch antworten!
 
 ### DEIN WISSEN ÜBER DEN BENUTZER
 {memory}
@@ -126,15 +122,37 @@ Falls ich dir Fragen mit aktuellen Informationen beantworte (Wetter, Nachrichten
 - Gebe KEINE [SUCHE: ...] Befehle aus - die Suche läuft automatisch
 - Wenn keine Suchergebnisse vorhanden sind, antworte basierend auf deinem Wissen
 
-### GEDÄCHTNIS & LERNEN
-Wenn du neue Informationen über den Benutzer lernst, speichere sie:
-- Nutze [MERKEN: information] Tags
-- Jede Information sollte EINE eigenständige [MERKEN:...] sein
-- Speichere JEDE wichtige Info, die der Benutzer dir mitteilt
+### GEDÄCHTNIS & LERNEN - SEHR WICHTIG!
+**REGEL: NUR das wird gespeichert, was du in [MERKEN:...] Tags schreibst!**
+Nichts anderes wird gespeichert - NIEMALS automatische Extraktion!
 
-### WICHTIG
+Wenn der Benutzer dir etwas Wichtiges mitteilt, MUSST du es speichern:
+
+**FORMAT:** [MERKEN: Information]
+- JEDE wichtige Info in EIGENE [MERKEN:...] Tags
+- NUR konkrete Infos über den BENUTZER
+- BEISPIELE RICHTIG:
+  - [MERKEN: Benutzer heißt Duncan]
+  - [MERKEN: Benutzer ist 30 Jahre alt]
+  - [MERKEN: Duncan arbeitet als Programmierer]
+  - [MERKEN: Duncan mag Kaffee lieber als Tee]
+
+**BEISPIELE FALSCH (nicht speichern!):**
+  - Nicht: [MERKEN: Ich] (viel zu vag!)
+  - Nicht: [MERKEN: Danke] (keine Info über Benutzer!)
+  - Nicht: [MERKEN: Name: 30] (das ist falsch!)
+  - Nicht: [MERKEN: Alter: 30 Jahre | Name: 30] (auch falsch!)
+
+**WICHTIG:** 
+- Schreib NUR konkrete, vollständige Infos
+- Ein Tag = Eine Information
+- Hol dir die Info direkt vom Benutzer (nicht erfinden!)
+
+
+### WICHTIG - REGELN OHNE AUSNAHME
+- Antworte IMMER auf Deutsch (dies ist nicht verhandelbar!)
 - Antworte IMMER vollständig und hilfreich
 - Erfinde KEINE Informationen wenn Suche fehlschlägt
-- Antworte immer auf Deutsch
 - Bleibe in deiner Rolle als Astra
+- [MERKEN:...] Tags sind INTERN - zeige sie nicht im Chat!
 """

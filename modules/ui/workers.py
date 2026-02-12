@@ -1,35 +1,11 @@
 """
 ASTRA UI - Worker Threads
 ==========================
-Alle QThread-basierte Worker für non-blocking Operationen
+QThread-basierte Worker für non-blocking Operationen
 """
 
-from typing import List, Dict
 from PyQt6.QtCore import QThread, pyqtSignal
 from modules.ollama_client import OllamaClient
-
-
-class LLMWorker(QThread):
-    """Worker-Thread für LLM-Anfragen (non-blocking)"""
-    
-    finished = pyqtSignal(str)
-    error = pyqtSignal(str)
-    
-    def __init__(self, ollama: OllamaClient, model: str, messages: List[Dict]):
-        super().__init__()
-        self.ollama = ollama
-        self.model = model
-        self.messages = messages
-    
-    def run(self):
-        try:
-            response = self.ollama.chat(self.model, self.messages)
-            if response:
-                self.finished.emit(response)
-            else:
-                self.error.emit("Keine Antwort von Ollama")
-        except Exception as e:
-            self.error.emit(f"Fehler: {str(e)}")
 
 
 class LLMStreamWorker(QThread):
@@ -39,7 +15,7 @@ class LLMStreamWorker(QThread):
     finished = pyqtSignal(str)         # Komplette Antwort
     error = pyqtSignal(str)
     
-    def __init__(self, ollama: OllamaClient, model: str, messages: List[Dict], temperature: float = 0.7):
+    def __init__(self, ollama: OllamaClient, model: str, messages: list[dict], temperature: float = 0.7):
         super().__init__()
         self.ollama = ollama
         self.model = model
@@ -49,14 +25,27 @@ class LLMStreamWorker(QThread):
     
     def run(self):
         try:
+            from modules.logger import astra_logger
+            
+            astra_logger.info(f"🚀 LLMStreamWorker.run() started für {self.model}")
+            
+            chunk_count = 0
+            
             # Nutze die neue streaming Methode mit Temperature
             for chunk in self.ollama.chat_stream(self.model, self.messages, self.temperature):
+                chunk_count += 1
+                
                 if chunk:
                     self.full_response += chunk
                     self.chunk_received.emit(chunk)  # Emit jeden Chunk sofort!
             
+            astra_logger.info(f"✅ Stream fertig: {chunk_count} Chunks, {len(self.full_response)} Zeichen total")
             self.finished.emit(self.full_response)
+            
         except Exception as e:
+            msg = f"❌ LLMStreamWorker Error: {e}"
+            from modules.logger import astra_logger
+            astra_logger.error(msg, exc_info=True)
             self.error.emit(f"Fehler: {str(e)}")
 
 
@@ -114,4 +103,48 @@ class SearchWorker(QThread):
             self.error.emit(f"SearchWorker: {str(e)[:100]}")
 
 
-__all__ = ['LLMWorker', 'LLMStreamWorker', 'HealthWorker', 'SearchWorker']
+class RichFormatterWorker(QThread):
+    """Worker-Thread für RichFormatter - verhindert UI-Blockierung!
+    
+    Nutzerfall:
+    1. Streaming zeigt Plain-Text (super schnell)
+    2. Response fertig → starte RichFormatterWorker
+    3. Worker formatiert mit RichFormatter (im Hintergrund)
+    4. Signal mit HTML zurück an Main-Thread
+    5. insertHtml() ist super schnell (nur append, kein format)
+    """
+    
+    finished = pyqtSignal(str)  # Formatiertes HTML
+    error = pyqtSignal(str)
+    
+    def __init__(self, text: str, source: str = "llm", confidence: float = None, text_size: int = 10):
+        super().__init__()
+        self.text = text
+        self.source = source
+        self.confidence = confidence
+        self.text_size = text_size  # Wichtig für einheitliche Schriftgröße!
+    
+    def run(self):
+        """Formatiert Text mit RichFormatter im Worker-Thread"""
+        try:
+            from modules.ui.rich_formatter import RichFormatter
+            
+            # Formatiere den Text (diese Operation kann langsam sein)
+            formatted_html = RichFormatter.format_text(self.text)
+            
+            # Baue die komplette Bubble mit Badges
+            html = self._build_bubble_html(formatted_html)
+            
+            self.finished.emit(html)
+        except Exception as e:
+            self.error.emit(f"RichFormatter: {str(e)[:100]}")
+    
+    def _build_bubble_html(self, formatted_content: str) -> str:
+        """Gibt nur den formatierten Inhalt zurück.
+        
+        Das Bubble-Styling (Hintergrund, Rundung, Footer) übernimmt
+        jetzt BubbleWidget per Qt Stylesheet — kein HTML-Wrapper nötig.
+        """
+        return formatted_content
+
+

@@ -4,8 +4,6 @@ ASTRA AI - Utility Funktionen
 Verschiedene Hilfsfunktionen + Security Utils
 """
 
-import requests
-import html
 import re
 import time
 from typing import List, Dict
@@ -91,33 +89,7 @@ class SecurityUtils:
                 text = re.sub(pattern, '[BLOCKED]', text, flags=re.IGNORECASE)
         
         return text.strip()
-    
-    @staticmethod
-    def sanitize_html(text: str) -> str:
-        """Entfernt/escaped HTML-Tags aus Text"""
-        # Escape alle HTML-Tags
-        text = html_escape(text)
-        # Ersetze escapedte HTML-Tags mit sicheren Varianten
-        text = text.replace('&lt;b&gt;', '<b>')
-        text = text.replace('&lt;/b&gt;', '</b>')
-        text = text.replace('&lt;i&gt;', '<i>')
-        text = text.replace('&lt;/i&gt;', '</i>')
-        return text
-    
-    @staticmethod
-    def safe_database_path(path: str) -> str:
-        """Prüft ob Pfad sicher ist"""
-        import os
-        from pathlib import Path
-        
-        # Vermeide Path Traversal
-        if '..' in path or path.startswith('/'):
-            raise ValueError("Unsicherer Pfad!")
-        
-        # Absolute Path
-        full_path = Path(path).resolve()
-        return str(full_path)
-    
+
     @staticmethod
     def validate_chat_name(name: str) -> bool:
         """Validiert Chat-Namen"""
@@ -268,7 +240,6 @@ class SearchEngine:
             
             # Verarbeite Ergebnisse
             formatted_results = []
-            all_text = []
             
             for i, r in enumerate(results, 1):
                 title = r.get('title', 'Kein Titel')
@@ -281,8 +252,6 @@ class SearchEngine:
                     'quelle': href,
                     'nummer': i
                 })
-                
-                all_text.append(f"{title}. {body}")
             
             # Erstelle Zusammenfassung basierend auf Query-Typ
             zusammenfassung = SearchEngine._summarize_results(original_query, formatted_results)
@@ -402,16 +371,6 @@ class TextUtils:
         if len(text) > max_length:
             return text[:max_length] + "..."
         return text
-    
-    @staticmethod
-    def format_timestamp(iso_string: str) -> str:
-        """Formatiert ISO-Timestamp in lesbares Format"""
-        try:
-            from datetime import datetime
-            dt = datetime.fromisoformat(iso_string)
-            return dt.strftime("%d.%m.%Y %H:%M")
-        except:
-            return iso_string
 
 
 class HealthChecker:
