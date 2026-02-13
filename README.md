@@ -9,6 +9,7 @@ Moderne Desktop-App mit Echtzeit-Streaming, Langzeitgedächtnis, Internet-Suche 
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-blue?logo=python&logoColor=white)](https://python.org)
 [![PyQt6](https://img.shields.io/badge/UI-PyQt6-green?logo=qt)](https://pypi.org/project/PyQt6/)
 [![Ollama](https://img.shields.io/badge/LLM-Ollama-black?logo=ollama)](https://ollama.ai)
+[![Tests](https://img.shields.io/badge/Tests-99%2F99-brightgreen)](tests/run_tests.py)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 </div>
@@ -24,7 +25,12 @@ Moderne Desktop-App mit Echtzeit-Streaming, Langzeitgedächtnis, Internet-Suche 
 | 🔍 **Internet-Suche** | DuckDuckGo-Integration für aktuelle Infos (Wetter, News, etc.) |
 | 🎮 **Auto GPU-Erkennung** | NVIDIA → CUDA, AMD RDNA 3 → ROCm, AMD RDNA 4 → Vulkan, Intel → Vulkan |
 | 💬 **Multi-Chat** | Unbegrenzte parallele Chat-Sessions mit separater History |
-| 🎨 **Rich Formatting** | Markdown-Rendering, Syntax-Highlighting, Code-Blöcke |
+| ✏️ **Chat-Umbenennung** | Doppelklick oder F2 zum Umbenennen von Chats |
+| 🎨 **Rich Formatting** | Markdown-Rendering, Code-Highlighting mit Pygments (Monokai-Theme) |
+| 📥 **System-Tray** | Minimiert in die Taskleiste, läuft im Hintergrund weiter |
+| 🔄 **Auto-Update** | Prüft GitHub-Releases automatisch auf neue Versionen |
+| ⌨️ **Keyboard Shortcuts** | Strg+N, Strg+E, Strg+D, F2, Esc — für schnelles Arbeiten |
+| 🩺 **Health-Check** | 7-Kategorien-Systemcheck beim Start (Module, DB, Ollama, GPU, Pakete) |
 | ⚙️ **Konfigurierbar** | Modell, Temperatur, Textgröße, Theme über Settings-Dialog |
 | 🔒 **Sicherheit** | Input-Validation, Rate-Limiting, XSS/SQLi-Schutz |
 | 📦 **Standalone EXE** | Kann als Windows-EXE gebaut werden (keine Python-Installation nötig) |
@@ -64,10 +70,23 @@ pip install -r requirements.txt
 # Option 1: Direkt starten
 python main.py
 
-# Option 2: Über das Start-Skript (Windows)
+# Option 2: Über das Start-Skript (inkl. Health-Check)
 start.bat
 ```
 
+---
+
+## ⌨️ Keyboard Shortcuts
+
+| Shortcut | Aktion |
+|----------|--------|
+| `Strg+N` | Neuer Chat |
+| `Strg+,` | Einstellungen öffnen |
+| `Strg+E` | Chat exportieren |
+| `Strg+D` | Chat löschen |
+| `Strg+F` | Eingabefeld fokussieren |
+| `F2` | Chat umbenennen |
+| `Esc` | Generierung stoppen |
 
 ---
 
@@ -77,7 +96,7 @@ ASTRA erkennt beim Start automatisch die GPU und setzt die optimalen Ollama-Eins
 
 | GPU | Backend | Automatisch |
 |-----|---------|-------------|
-| NVIDIA (alle) | CUDA | ✅  |
+| NVIDIA (alle) | CUDA | ✅ |
 | AMD RX 7000 (RDNA 3) | ROCm | ✅ |
 | AMD RX 9000 (RDNA 4) | Vulkan | ✅ |
 | Intel Arc | Vulkan | ✅ |
@@ -87,13 +106,31 @@ Die Statusleiste zeigt den aktiven Modus: `🟢 Online ⚡VULKAN` / `⚡CUDA` / 
 
 ---
 
+## 🩺 Health-Check
+
+Der integrierte Health-Check prüft beim Start 7 Kategorien:
+
+```
+  --- Module ---        7 kritische Module (DB, Memory, Ollama, UI, GPU, ...)
+  --- Dateisystem ---   Verzeichnisse und Konfigurationsdateien
+  --- Config ---        Ollama-Host, Modell, Timeouts
+  --- Datenbank ---     SQLite-Tabellen und Zugriff
+  --- Ollama ---        Server-Erreichbarkeit + Modell-Verfügbarkeit
+  --- Hardware ---      GPU-Erkennung (z.B. AMD RX 9070 XT → VULKAN)
+  --- Pakete ---        PyQt6, Pygments, Requests, DDGS
+```
+
+Ergebnisse: `[OK]` / `[WARN]` / `[FAIL]` / `[INFO]` — bei kritischen Fehlern wird Force-Start angeboten.
+
+---
+
 ## 📁 Projektstruktur
 
 ```
 ASTRA 2.0/
 ├── main.py                         # Einstiegspunkt mit Crash-Recovery
 ├── config.py                       # Zentrale Konfiguration
-├── start.bat                       # Windows-Launcher
+├── start.bat                       # Windows-Launcher mit Health-Check
 ├── requirements.txt                # Python-Dependencies
 ├── build_exe.py                    # PyInstaller → Standalone EXE
 │
@@ -102,23 +139,24 @@ ASTRA 2.0/
 │   ├── memory.py                   # Langzeitgedächtnis (MERKEN-Tags)
 │   ├── ollama_client.py            # LLM-Streaming mit adaptiven Timeouts
 │   ├── gpu_detect.py               # Auto GPU-Erkennung & Konfiguration
-│   ├── logger.py                   # Strukturiertes Logging
-│   ├── utils.py                    # Security, Rate-Limiting, Suche
+│   ├── logger.py                   # Strukturiertes Logging (14-Tage-Rotation)
+│   ├── utils.py                    # Security, Rate-Limiting, Suche, HealthCheck
+│   ├── updater.py                  # Auto-Update Checker (GitHub Releases)
 │   └── ui/
-│       ├── main_window.py          # Hauptfenster (PyQt6)
+│       ├── main_window.py          # Hauptfenster + System-Tray + Shortcuts
 │       ├── chat_display.py         # Chat-Bubbles & Streaming-Anzeige
-│       ├── rich_formatter.py       # Markdown → HTML Rendering
+│       ├── rich_formatter.py       # Markdown → HTML + Pygments Code-Highlighting
 │       ├── settings_dialog.py      # Einstellungs-Dialog
-│       ├── settings_manager.py     # JSON-basierte Settings
-│       ├── workers.py              # QThread-Worker (LLM, Suche, Format)
-│       ├── styles.py               # Qt Stylesheets
+│       ├── settings_manager.py     # JSON-basierte Settings (Debounced Save)
+│       ├── workers.py              # QThread-Worker (LLM, Suche, Health)
+│       ├── styles.py               # Modernes Qt Stylesheet (Pill-Buttons, etc.)
 │       └── colors.py               # Farbkonstanten
 │
 ├── config/settings.json            # Benutzer-Einstellungen
 ├── data/                           # SQLite-Datenbank & Backups
-├── logs/                           # Log-Dateien
-├── tests/                          # Test-Suite
-└── assets/                         # Icons & Assets
+├── logs/                           # Log-Dateien (14-Tage-Rotation)
+├── tests/run_tests.py              # 99 Unit-Tests (15 Testklassen)
+└── assets/                         # Icons & SVG-Assets
 ```
 
 ---
@@ -151,6 +189,20 @@ MAX_CHAT_HISTORY_MESSAGES = 20  # Kontext-Limit
 
 ---
 
+## 🧪 Tests
+
+```bash
+# Alle 99 Tests ausführen
+python tests/run_tests.py
+
+# Verbose-Modus
+python tests/run_tests.py -v
+```
+
+Getestete Module: Config, Logger, Database, Memory, OllamaClient, RichFormatter, RateLimiter, Security, SearchEngine, TextUtils, SettingsManager, ErrorResilience, HealthChecker, Updater, SystemTray.
+
+---
+
 ## 🔧 Troubleshooting
 
 | Problem | Lösung |
@@ -161,6 +213,8 @@ MAX_CHAT_HISTORY_MESSAGES = 20  # Kontext-Limit
 | ModuleNotFoundError | `pip install -r requirements.txt` |
 | Database locked | App neustarten |
 | Suche liefert nichts | Internet-Verbindung prüfen |
+| Health-Check FAIL | Fehlende Pakete nachinstallieren |
+| Tray-Icon nicht sichtbar | Systemtray-Überlauf in Windows-Einstellungen prüfen |
 
 ---
 
@@ -168,17 +222,27 @@ MAX_CHAT_HISTORY_MESSAGES = 20  # Kontext-Limit
 
 ```bash
 python build_exe.py
+# inkl. Health-Check vor Build
 # Ergebnis: dist/ASTRA AI.exe (~150 MB, standalone)
 ```
+
+---
+
+## 🔄 Auto-Update
+
+ASTRA prüft beim Start automatisch auf neue GitHub-Releases. Bei verfügbaren Updates erscheint:
+- Tray-Benachrichtigung
+- Dialog mit Release-Notes und Download-Link
 
 ---
 
 ## 🛡️ Sicherheit
 
 - **Input-Validation** — XSS- und SQL-Injection-Schutz
-- **Rate-Limiting** — Max. 30 Nachrichten pro Minute
-- **SQLite WAL** — Crash-sichere Datenbank
+- **Rate-Limiting** — Max. 30 Nachrichten pro Minute (thread-safe)
+- **SQLite WAL** — Crash-sichere Datenbank mit Thread-Locking
 - **Graceful Recovery** — Automatischer Neuversuch bei Fehlern (3x Retry)
+- **Chat-Name Validation** — Nur sichere Zeichen erlaubt
 
 ---
 
