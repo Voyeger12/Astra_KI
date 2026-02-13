@@ -44,12 +44,26 @@ class RichFormatter:
         
         WICHTIG: Erhält RAW Code-Text — escape() passiert NUR hier intern!
         """
+        # Sprach-Label für Anzeige
+        lang_display = language.upper() if language and language != "text" else ""
+        lang_badge = ""
+        if lang_display:
+            lang_badge = (
+                f'<div style="background:#ff4b4b;color:white;display:inline-block;'
+                f'padding:2px 8px;border-radius:4px;font-size:7pt;font-weight:700;'
+                f'margin-bottom:4px;font-family:Segoe UI,sans-serif;">{lang_display}</div>'
+            )
+        
         if not PYGMENTS_AVAILABLE:
             escaped_code = escape(code)
             return (
-                f'<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;'
-                f'border-radius:8px;overflow-x:auto;">'
-                f'<code>{escaped_code}</code></pre>'
+                f'<div style="background:#161616;border-radius:10px;'
+                f'border-left:3px solid #ff4b4b;margin:8px 0;padding:12px;'
+                f'overflow-x:auto;">'
+                f'{lang_badge}'
+                f'<pre style="margin:0;color:#d4d4d4;font-family:Consolas,\'Courier New\',monospace;'
+                f'font-size:9pt;line-height:1.5;">'
+                f'<code>{escaped_code}</code></pre></div>'
             )
         
         try:
@@ -63,21 +77,32 @@ class RichFormatter:
                 full=False,
                 linenos=False,
                 noclasses=True,
+                prestyles=(
+                    'margin:0;padding:0;background:transparent;'
+                    'font-family:Consolas,"Courier New",monospace;'
+                    'font-size:9pt;line-height:1.5;'
+                ),
             )
             
             highlighted = highlight(code, lexer, formatter)
             
             return (
-                f'<div style="background:#1e1e1e;border-radius:8px;'
-                f'overflow-x:auto;margin:8px 0;border-left:4px solid #ff4b4b;">'
+                f'<div style="background:#161616;border-radius:10px;'
+                f'border-left:3px solid #ff4b4b;margin:8px 0;padding:12px;'
+                f'overflow-x:auto;">'
+                f'{lang_badge}'
                 f'{highlighted}</div>'
             )
         except Exception:
             escaped_code = escape(code)
             return (
-                f'<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;'
-                f'border-radius:8px;overflow-x:auto;">'
-                f'<code>{escaped_code}</code></pre>'
+                f'<div style="background:#161616;border-radius:10px;'
+                f'border-left:3px solid #ff4b4b;margin:8px 0;padding:12px;'
+                f'overflow-x:auto;">'
+                f'{lang_badge}'
+                f'<pre style="margin:0;color:#d4d4d4;font-family:Consolas,\'Courier New\',monospace;'
+                f'font-size:9pt;line-height:1.5;">'
+                f'<code>{escaped_code}</code></pre></div>'
             )
     
     @staticmethod

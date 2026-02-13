@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QFrame, QMessageBox, QLabel, QFileDialog
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtGui import QFont, QIcon, QShortcut, QKeySequence
 from pathlib import Path
 
 from config import COLORS, WINDOW_WIDTH, WINDOW_HEIGHT, OLLAMA_MODELS, DEFAULT_MODEL
@@ -95,6 +95,9 @@ class ChatWindow(QMainWindow):
             self.health_worker.start()
         except Exception:
             self._ollama_alive = False
+        
+        # ⌨️ Keyboard Shortcuts
+        self._setup_shortcuts()
     
     def setup_ui(self):
         """Erstellt die Benutzeroberfläche"""
@@ -155,6 +158,7 @@ class ChatWindow(QMainWindow):
         self.chat_list.setMaximumHeight(320)
         left_layout.addWidget(self.chat_list)
         self.chat_list.itemClicked.connect(self.on_chat_selected)
+        self.chat_list.itemDoubleClicked.connect(self._on_chat_double_clicked)
         
         # Action-Buttons
         button_layout = QHBoxLayout()
@@ -414,7 +418,53 @@ class ChatWindow(QMainWindow):
     
     def on_chat_selected(self, item: QListWidgetItem):
         """Chat selected from list"""
+        # Ignoriere Klick wenn gerade umbenannt wird (EditRole aktiv)
+        if self.chat_list.state() == QListWidget.State.EditingState:
+            return
         self.select_chat(item.text())
+    
+    def _on_chat_double_clicked(self, item: QListWidgetItem):
+        """Chat-Umbenennung per Doppelklick"""
+        self._rename_old_name = item.text()
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+        self.chat_list.editItem(item)
+        # Einmalig: Signal verbinden für Ende der Bearbeitung
+        try:
+            self.chat_list.itemDelegate().commitData.disconnect(self._on_rename_committed)
+        except Exception:
+            pass
+        self.chat_list.itemDelegate().commitData.connect(self._on_rename_committed)
+    
+    def _on_rename_committed(self, editor):
+        """Wird aufgerufen wenn die Umbenennung bestätigt wird"""
+        new_name = editor.text().strip()
+        old_name = getattr(self, '_rename_old_name', None)
+        
+        if not old_name or not new_name or new_name == old_name:
+            # Nichts geändert — zurücksetzen
+            if old_name:
+                item = self.chat_list.currentItem()
+                if item:
+                    item.setText(old_name)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            return
+        
+        # Versuche Umbenennung in DB
+        if self.db.rename_chat(old_name, new_name):
+            # Erfolg — aktualisiere current_chat falls nötig
+            if self.current_chat == old_name:
+                self.current_chat = new_name
+            item = self.chat_list.currentItem()
+            if item:
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            astra_logger.info(f"✏️ Chat umbenannt: '{old_name}' → '{new_name}'")
+        else:
+            # Fehlgeschlagen (z.B. Name existiert schon)
+            QMessageBox.warning(self, "⚠️", f"Name '{new_name}' existiert bereits!")
+            item = self.chat_list.currentItem()
+            if item:
+                item.setText(old_name)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
     
     def select_chat(self, chat_name: str):
         """Wählt einen Chat und zeigt ihn an"""
@@ -1035,3 +1085,43 @@ class ChatWindow(QMainWindow):
         # Aktualisiere den Chat im Display durch Neuzeichnen
         if self.current_chat:
             self.select_chat(self.current_chat)
+    
+    # ================================================================
+    # KEYBOARD SHORTCUTS
+    # ================================================================
+    
+    def _setup_shortcuts(self):
+        """Richtet globale Keyboard-Shortcuts ein"""
+        # Strg+N = Neuer Chat
+        QShortcut(QKeySequence("Ctrl+N"), self).activated.connect(self.create_new_chat)
+        
+        # Strg+, = Einstellungen
+        QShortcut(QKeySequence("Ctrl+,"), self).activated.connect(self.open_settings)
+        
+        # Strg+E = Chat exportieren
+        QShortcut(QKeySequence("Ctrl+E"), self).activated.connect(self.export_current_chat)
+        
+        # Strg+D / Entf = Chat löschen
+        QShortcut(QKeySequence("Ctrl+D"), self).activated.connect(self.delete_current_chat)
+        
+        # Esc = Generierung stoppen
+        QShortcut(QKeySequence("Escape"), self).activated.connect(self._shortcut_stop)
+        
+        # Strg+F = Focus auf Eingabefeld
+        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(
+            lambda: self.message_input.setFocus()
+        )
+        
+        # F2 = Aktuellen Chat umbenennen
+        QShortcut(QKeySequence("F2"), self).activated.connect(self._shortcut_rename_chat)
+    
+    def _shortcut_stop(self):
+        """Esc-Shortcut: Generierung stoppen falls aktiv"""
+        if self.is_waiting_for_response:
+            self._stop_generation()
+    
+    def _shortcut_rename_chat(self):
+        """F2-Shortcut: Aktuellen Chat umbenennen"""
+        item = self.chat_list.currentItem()
+        if item:
+            self._on_chat_double_clicked(item)
