@@ -21,9 +21,9 @@ class BubbleWidget(QFrame):
     """Einzelne Chat-Bubble mit echten runden Ecken via Qt Stylesheet"""
 
     def __init__(self, html_content: str, role: str = "assistant",
-                 timestamp: str = "", source: str = None,
-                 confidence: float = None, text_size: int = 11,
-                 stats: str = None, parent=None):
+                timestamp: str = "", source: str = None,
+                confidence: float = None, text_size: int = 11,
+                stats: str = None, parent=None):
         super().__init__(parent)
         self.setObjectName("BubbleWidget")
         self.role = role
@@ -173,8 +173,8 @@ class ChatDisplayWidget(QScrollArea):
         """)
 
     def add_bubble(self, html_content: str, role: str = "assistant",
-                   timestamp: str = "", source: str = None,
-                   confidence: float = None, stats: str = None) -> BubbleWidget:
+                timestamp: str = "", source: str = None,
+                confidence: float = None, stats: str = None) -> BubbleWidget:
         """Fügt eine neue Bubble hinzu und gibt sie zurück."""
         bubble = BubbleWidget(
             html_content, role=role, timestamp=timestamp,

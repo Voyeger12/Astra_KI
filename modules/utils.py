@@ -559,7 +559,7 @@ class HealthChecker:
 
             # Timeouts plausibel
             bad_timeouts = [k for k, v in OLLAMA_TIMEOUTS.items()
-                           if not (10 <= v <= 600)]
+                        if not (10 <= v <= 600)]
             if not bad_timeouts:
                 results.append({
                     "category": "Config",

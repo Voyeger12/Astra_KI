@@ -388,7 +388,7 @@ class TestOllamaClient(unittest.TestCase):
                 continue
             actual = client._get_timeout(model)
             self.assertEqual(actual, expected_timeout,
-                             f"{model}: erwartet {expected_timeout}s, bekommen {actual}s")
+                            f"{model}: erwartet {expected_timeout}s, bekommen {actual}s")
 
     def test_timeout_for_unknown_model(self):
         """Unbekanntes Modell bekommt Default-Timeout"""
@@ -1066,7 +1066,7 @@ class TestHealthChecker(unittest.TestCase):
             # Mindestens Database und Memory sollten importierbar sein
             if r["name"] in ("Database", "Memory", "Logger"):
                 self.assertEqual(r["level"], HealthChecker.OK,
-                                 f"{r['name']} Import fehlgeschlagen: {r['message']}")
+                                f"{r['name']} Import fehlgeschlagen: {r['message']}")
 
     def test_filesystem_checks(self):
         """Dateisystem-Checks geben plausible Ergebnisse"""

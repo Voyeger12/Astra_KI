@@ -518,7 +518,7 @@ class ChatWindow(QMainWindow):
         self.chat_display.add_bubble(formatted, role="user", timestamp=timestamp)
 
     def _add_assistant_bubble(self, text: str, source: str = None,
-                               confidence: float = None, timestamp: str = ""):
+                            confidence: float = None, timestamp: str = ""):
         """Fügt eine Assistant-Bubble als Widget hinzu."""
         formatted = RichFormatter.format_text(text)
         return self.chat_display.add_bubble(

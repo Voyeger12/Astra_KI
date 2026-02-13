@@ -278,8 +278,8 @@ class StyleSheet:
         
         QSlider::sub-page:horizontal {{
             background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                                       stop:0 {COLORS['primary']},
-                                       stop:1 {COLORS['accent']});
+                                    stop:0 {COLORS['primary']},
+                                    stop:1 {COLORS['accent']});
             border-radius: 3px;
         }}
         
