@@ -91,9 +91,11 @@ if %HC_RESULT% NEQ 0 (
     echo [WARN] Start wird trotz Fehlern erzwungen...
 )
 
-REM Starte Anwendung (Konsole schliesst sich sofort, App laeuft im Hintergrund)
+REM Starte Anwendung (App startet im Hintergrund, Konsole schliesst sich nach 3s)
 echo.
 echo [START] Starte ASTRA AI...
 echo.
 start "" pythonw main.py
+echo [OK] ASTRA AI gestartet! Dieses Fenster schliesst sich gleich...
+timeout /t 3 /nobreak >nul
 exit
