@@ -16,6 +16,8 @@ from pathlib import Path
 from config import COLORS, OLLAMA_MODELS, DEFAULT_MODEL
 from modules.ui.styles import StyleSheet
 from modules.ui.settings_manager import SettingsManager
+from modules.ollama_client import OllamaClient
+from modules.logger import astra_logger
 
 
 class SettingsDialog(QDialog):
@@ -24,13 +26,15 @@ class SettingsDialog(QDialog):
     # Signal für Textgrößen-Änderungen
     text_size_changed = pyqtSignal(int)
     
-    def __init__(self, parent=None, memory_manager=None, settings_manager=None):
+    def __init__(self, parent=None, memory_manager=None, settings_manager=None, available_models=None):
         super().__init__(parent)
         self.setWindowTitle("Einstellungen - ASTRA")
         self.setGeometry(200, 150, 700, 600)
         self.setStyleSheet(StyleSheet.get_stylesheet())
         self.memory_manager = memory_manager
         self.settings_manager = settings_manager or SettingsManager()
+        # 🔄 Modelle: Übergeben (live) oder Fallback
+        self._available_models = available_models or list(OLLAMA_MODELS)
         
         # Icon setzen
         try:
@@ -118,13 +122,16 @@ class SettingsDialog(QDialog):
         label.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 11pt; border: none;")
         inner.addWidget(label)
         
+        # Modell-Auswahl mit Refresh-Button
+        model_row = QHBoxLayout()
+        
         self.model_combo = QComboBox()
-        self.model_combo.addItems(OLLAMA_MODELS)
+        self.model_combo.addItems(self._available_models)
         # Lade gespeicherte Auswahl
         saved_model = self.settings_manager.get('selected_model', DEFAULT_MODEL)
-        if saved_model in OLLAMA_MODELS:
+        if saved_model in self._available_models:
             self.model_combo.setCurrentText(saved_model)
-        else:
+        elif DEFAULT_MODEL in self._available_models:
             self.model_combo.setCurrentText(DEFAULT_MODEL)
         
         self.model_combo.setMinimumHeight(36)
@@ -137,7 +144,21 @@ class SettingsDialog(QDialog):
         self.model_combo.currentTextChanged.connect(
             lambda text: self.settings_manager.set('selected_model', text)
         )
-        inner.addWidget(self.model_combo)
+        model_row.addWidget(self.model_combo, 1)
+        
+        # 🔄 Refresh-Button
+        refresh_model_btn = QPushButton("🔄")
+        refresh_model_btn.setToolTip("Modelle von Ollama neu laden")
+        refresh_model_btn.setFixedSize(36, 36)
+        refresh_model_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {COLORS['primary']}; color: white; "
+            f"border: none; border-radius: 12px; font-size: 12pt; }}"
+            f"QPushButton:hover {{ background-color: {COLORS['primary_dark']}; }}"
+        )
+        refresh_model_btn.clicked.connect(self._refresh_models)
+        model_row.addWidget(refresh_model_btn)
+        
+        inner.addLayout(model_row)
         
         info = QLabel("Dies ist das KI-Modell, das für alle Antworten verwendet wird.")
         info.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 9pt; font-style: italic; border: none;")
@@ -451,6 +472,25 @@ class SettingsDialog(QDialog):
         else:
             QMessageBox.warning(self, "⚠️", "Memory Manager nicht verfügbar")
     
+    def _refresh_models(self):
+        """Holt Modelle erneut live von Ollama und aktualisiert die ComboBox."""
+        try:
+            client = OllamaClient()
+            models = client.get_available_models()
+            if models:
+                current = self.model_combo.currentText()
+                self.model_combo.clear()
+                self.model_combo.addItems(models)
+                self._available_models = models
+                # Vorherige Auswahl beibehalten wenn möglich
+                if current in models:
+                    self.model_combo.setCurrentText(current)
+                astra_logger.info(f"🔄 Modelle aktualisiert: {models}")
+            else:
+                QMessageBox.warning(self, "⚠️", "Keine Modelle gefunden.\nIst Ollama gestartet?")
+        except Exception as e:
+            QMessageBox.warning(self, "⚠️", f"Fehler beim Laden der Modelle:\n{e}")
+
     def _on_text_size_changed(self):
         """Aktualisiert die Vorschau UND emittiert das Signal"""
         size = self.text_size_slider.value()

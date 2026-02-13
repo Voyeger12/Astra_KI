@@ -23,7 +23,7 @@ class BubbleWidget(QFrame):
     def __init__(self, html_content: str, role: str = "assistant",
                  timestamp: str = "", source: str = None,
                  confidence: float = None, text_size: int = 11,
-                 parent=None):
+                 stats: str = None, parent=None):
         super().__init__(parent)
         self.setObjectName("BubbleWidget")
         self.role = role
@@ -65,8 +65,12 @@ class BubbleWidget(QFrame):
             footer.setText(f'<span style="color:rgba(255,255,255,0.5);font-size:7pt;">{ts}</span>')
             footer.setAlignment(Qt.AlignmentFlag.AlignRight)
         else:
-            footer.setText(f'<span style="font-size:7pt;">{badge}<span style="color:#555;">{ts}</span></span>')
+            stats_html = ""
+            if stats:
+                stats_html = f'<span style="color:#888;font-size:7pt;">{stats} · </span>'
+            footer.setText(f'<span style="font-size:7pt;">{badge}{stats_html}<span style="color:#555;">{ts}</span></span>')
             footer.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.footer = footer  # Referenz für spätere Stats-Aktualisierung
         layout.addWidget(footer)
 
         # Styling
@@ -149,12 +153,12 @@ class ChatDisplayWidget(QScrollArea):
 
     def add_bubble(self, html_content: str, role: str = "assistant",
                    timestamp: str = "", source: str = None,
-                   confidence: float = None) -> BubbleWidget:
+                   confidence: float = None, stats: str = None) -> BubbleWidget:
         """Fügt eine neue Bubble hinzu und gibt sie zurück."""
         bubble = BubbleWidget(
             html_content, role=role, timestamp=timestamp,
             source=source, confidence=confidence,
-            text_size=self.text_size
+            text_size=self.text_size, stats=stats
         )
 
         # Alignment: User rechts, Assistant links
@@ -195,10 +199,19 @@ class ChatDisplayWidget(QScrollArea):
             self._streaming_bubble.label.setText(html_content + " ▌")
             QTimer.singleShot(10, self._scroll_to_bottom)
 
-    def finish_streaming_bubble(self, final_html: str, source: str = "llm"):
+    def finish_streaming_bubble(self, final_html: str, source: str = "llm", stats: str = None):
         """Ersetzt die Streaming-Bubble mit der final formatierten Version."""
         if self._streaming_bubble:
             self._streaming_bubble.label.setText(final_html)
+            # Stats im Footer aktualisieren
+            if stats and hasattr(self._streaming_bubble, 'footer'):
+                from datetime import datetime
+                ts = datetime.now().strftime("%H:%M")
+                badge = '<span style="color:#ff8080;">⚡ Astra · </span>' if source == "llm" else ""
+                stats_html = f'<span style="color:#888;font-size:7pt;">{stats} · </span>'
+                self._streaming_bubble.footer.setText(
+                    f'<span style="font-size:7pt;">{badge}{stats_html}<span style="color:#555;">{ts}</span></span>'
+                )
             self._streaming_bubble = None
             QTimer.singleShot(10, self._scroll_to_bottom)
 

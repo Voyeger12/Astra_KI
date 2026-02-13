@@ -9,12 +9,46 @@ from html import escape as html_escape
 from threading import Thread
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
-    QPushButton, QListWidget, QListWidgetItem, QLineEdit,
+    QPushButton, QListWidget, QListWidgetItem, QTextEdit,
     QFrame, QMessageBox, QLabel, QFileDialog,
     QSystemTrayIcon, QMenu
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QIcon, QShortcut, QKeySequence, QAction
+
+
+class MultiLineInput(QTextEdit):
+    """Mehrzeiliges Eingabefeld: Enter → Senden, Shift+Enter → Zeilenumbruch.
+    Wächst automatisch mit dem Text (max 150px Höhe).
+    """
+    send_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptRichText(False)
+        self.setTabChangesFocus(True)
+        self._min_height = 46
+        self._max_height = 150
+        self.setMinimumHeight(self._min_height)
+        self.setMaximumHeight(self._min_height)
+        self.document().contentsChanged.connect(self._auto_resize)
+
+    def keyPressEvent(self, event):
+        """Enter sendet, Shift+Enter fügt Zeilenumbruch ein."""
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                super().keyPressEvent(event)  # Zeilenumbruch
+            else:
+                self.send_requested.emit()  # Senden
+            return
+        super().keyPressEvent(event)
+
+    def _auto_resize(self):
+        """Passt die Höhe automatisch an den Inhalt an."""
+        doc_height = int(self.document().size().height()) + 16
+        new_height = max(self._min_height, min(doc_height, self._max_height))
+        self.setMaximumHeight(new_height)
+        self.setMinimumHeight(min(new_height, self._min_height))
 from pathlib import Path
 
 from config import COLORS, WINDOW_WIDTH, WINDOW_HEIGHT, OLLAMA_MODELS, DEFAULT_MODEL
@@ -285,11 +319,11 @@ class ChatWindow(QMainWindow):
         input_layout.setContentsMargins(14, 10, 10, 10)
         input_layout.setSpacing(10)
         
-        self.message_input = QLineEdit()
-        self.message_input.setPlaceholderText("💬 Schreib deine Nachricht...")
+        self.message_input = MultiLineInput()
+        self.message_input.setPlaceholderText("💬 Schreib deine Nachricht... (Shift+Enter für Zeilenumbruch)")
         self.message_input.setMinimumHeight(46)
         self.message_input.setStyleSheet(
-            f"QLineEdit {{ "
+            f"QTextEdit {{ "
             f"background-color: {COLORS['primary']}11; "
             f"color: {COLORS['text']}; "
             f"border: 1px solid {COLORS['primary']}33; "
@@ -299,7 +333,7 @@ class ChatWindow(QMainWindow):
             f"font-weight: 500; "
             f"}}"
         )
-        self.message_input.returnPressed.connect(self.send_message)
+        self.message_input.send_requested.connect(self.send_message)
         input_layout.addWidget(self.message_input)
         
         send_btn = QPushButton("⚡ SENDEN")
@@ -530,7 +564,7 @@ class ChatWindow(QMainWindow):
             QMessageBox.warning(self, "⚠️", "Bitte wähle erst einen Chat aus")
             return
         
-        message = self.message_input.text().strip()
+        message = self.message_input.toPlainText().strip()
         if not message:
             return
         
@@ -689,6 +723,8 @@ class ChatWindow(QMainWindow):
             self.is_waiting_for_response = True
             self._streaming_started = False  # Reset Flag
             self._current_response = ""  # Reset Response Buffer
+            self._stream_start_time = None  # ⏱️ Startzeitpunkt für Statistiken
+            self._stream_token_count = 0    # 📊 Token-Counter
             self._generation_id = getattr(self, '_generation_id', 0) + 1  # ✅ Generation-ID anti-stale
             self._response_target_chat = self.current_chat  # ✅ Ziel-Chat fixieren (Race-Condition-Schutz)
             astra_logger.info(f"🔥 Starting LLM Request (gen={self._generation_id})...")
@@ -803,11 +839,14 @@ class ChatWindow(QMainWindow):
                     return  # Alter Worker → ignorieren
             
             self._current_response += chunk
+            self._stream_token_count += 1  # 📊 Chunk ≈ Token zählen
             
             if not self._streaming_started:
                 # Erstes Chunk — Streaming-Bubble existiert schon ("Denkt nach...")
                 # Jetzt Timer starten für Echtzeit-Update
                 self._streaming_started = True
+                import time
+                self._stream_start_time = time.time()  # ⏱️ Startzeit erfassen
                 astra_logger.info("🔄 Streaming started, Echtzeit-Anzeige aktiv")
                 
                 # Sofort erste Anzeige (ersetzt "Denkt nach...")
@@ -844,6 +883,17 @@ class ChatWindow(QMainWindow):
         try:
             astra_logger.info(f"✅ Stream fertig: {len(self._current_response)} Zeichen")
             
+            # ⏱️ Statistiken berechnen
+            import time
+            stats_text = None
+            if self._stream_start_time:
+                duration = time.time() - self._stream_start_time
+                tokens = self._stream_token_count
+                tps = tokens / duration if duration > 0 else 0
+                model_name = getattr(self, '_selected_model', 'unknown')
+                stats_text = f"⚡ {model_name} · {tokens} Tokens · {tps:.1f} T/s · {duration:.1f}s"
+                astra_logger.info(f"📊 {stats_text}")
+            
             # Timer stoppen
             self._stop_stream_timer()
             
@@ -879,6 +929,9 @@ class ChatWindow(QMainWindow):
             
             Thread(target=save_and_extract, daemon=True).start()
             
+            # 📊 Stats für _on_formatted_response_final speichern
+            self._last_stats_text = stats_text
+            
             # Streaming-Bubble durch Rich-formatierte Version ersetzen
             from modules.ui.workers import RichFormatterWorker
             self.formatter_worker = RichFormatterWorker(
@@ -900,8 +953,9 @@ class ChatWindow(QMainWindow):
         try:
             astra_logger.info("✅ Response formatted, displaying...")
             
-            # Ersetze Streaming-Bubble mit formatierter Version
-            self.chat_display.finish_streaming_bubble(formatted_html, source="llm")
+            # Ersetze Streaming-Bubble mit formatierter Version + Stats
+            stats = getattr(self, '_last_stats_text', None)
+            self.chat_display.finish_streaming_bubble(formatted_html, source="llm", stats=stats)
             
             astra_logger.info("✅ Response displayed")
             
@@ -1089,12 +1143,28 @@ class ChatWindow(QMainWindow):
             else:
                 QMessageBox.critical(self, "❌", "Fehler beim Löschen des Chats")
     
+    def _fetch_available_models(self) -> list[str]:
+        """Holt verfügbare Modelle von Ollama, Fallback auf hardcoded Liste."""
+        try:
+            live = self.ollama.get_available_models()
+            if live:
+                astra_logger.info(f"🔄 {len(live)} Modelle von Ollama geladen: {live}")
+                return live
+        except Exception as e:
+            astra_logger.warning(f"⚠️ Modell-Abfrage fehlgeschlagen: {e}")
+        astra_logger.info("📋 Nutze Fallback-Modellliste aus config")
+        return list(OLLAMA_MODELS)
+
     def open_settings(self):
         """Öffnet die Einstellungen"""
+        # 🔄 Live-Modelle von Ollama holen (Fallback: hardcoded Liste)
+        live_models = self._fetch_available_models()
+        
         settings_dialog = SettingsDialog(
             self, 
             memory_manager=self.memory_manager,
-            settings_manager=self.settings_manager
+            settings_manager=self.settings_manager,
+            available_models=live_models
         )
         
         # Verbinde Signal für Textgröße-Änderungen
