@@ -49,8 +49,22 @@ try:
         """Startet die ASTRA-Anwendung mit Crash-Recovery"""
         
         try:
+            # ⚡ Windows: Eigene AppUserModelID setzen
+            # Damit zeigt die Taskbar das ASTRA-Icon statt das Python-Icon
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("astra.ai.desktop.v2")
+            except Exception:
+                pass  # Nicht-Windows oder fehlende Rechte — ignorieren
+            
             # PyQt6 App erstellen
             app = QApplication(sys.argv)
+            
+            # App-Icon global setzen (für Taskbar, Alt+Tab, etc.)
+            from PyQt6.QtGui import QIcon
+            icon_path = Path(__file__).parent / "assets" / "astra_icon.ico"
+            if icon_path.exists():
+                app.setWindowIcon(QIcon(str(icon_path)))
             
             # Sichere Database-Initialisierung
             try:
