@@ -4,20 +4,14 @@
 
 **Dein lokaler KI-Assistent — privat, schnell, intelligent.**
 
+Moderne Desktop-App mit Echtzeit-Streaming, Langzeitgedächtnis, Internet-Suche und automatischer GPU-Beschleunigung. Läuft komplett lokal über [Ollama](https://ollama.ai).
+
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13+-blue?logo=python&logoColor=white)](https://python.org)
 [![Tests](https://github.com/Voyeger12/Astra_KI/actions/workflows/python-tests.yml/badge.svg?label=110%20Tests%20Passed)](https://github.com/Voyeger12/Astra_KI/actions)
 [![Security](https://img.shields.io/badge/Security-CodeQL-brightgreen?logo=github-actions&logoColor=white)](https://github.com/Voyeger12/Astra_KI/security/code-scanning)
 [![PyQt6](https://img.shields.io/badge/UI-PyQt6-green?logo=qt)](https://pypi.org/project/PyQt6/)
 [![Ollama](https://img.shields.io/badge/LLM-Ollama-black?logo=ollama)](https://ollama.ai)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
-Moderne Desktop-App mit Echtzeit-Streaming, Langzeitgedächtnis, Internet-Suche und automatischer GPU-Beschleunigung. Läuft komplett lokal über [Ollama](https://ollama.ai).
-
-[![Python 3.13+](https://img.shields.io/badge/Python-3.13+-blue?logo=python&logoColor=white)](https://python.org)
-[![PyQt6](https://img.shields.io/badge/UI-PyQt6-green?logo=qt)](https://pypi.org/project/PyQt6/)
-[![Ollama](https://img.shields.io/badge/LLM-Ollama-black?logo=ollama)](https://ollama.ai)
-[![Tests](https://img.shields.io/badge/Tests-99%2F99-brightgreen)](tests/run_tests.py)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 </div>
 
