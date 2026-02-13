@@ -141,6 +141,10 @@ class ChatWindow(QMainWindow):
         
         # 🔄 Auto-Update Check (non-blocking)
         self._check_for_updates()
+        
+        # 🔄 Modelle asynchron laden (für Settings-Dialog ohne Lag)
+        self._cached_models = None
+        self._fetch_available_models_async()
     
     def setup_ui(self):
         """Erstellt die Benutzeroberfläche"""
@@ -562,6 +566,75 @@ class ChatWindow(QMainWindow):
         self.message_input.setEnabled(True)
         self.is_waiting_for_response = False
     
+    @staticmethod
+    def _parse_memory_fact(text: str) -> tuple[str, str]:
+        """Extrahiert strukturierte Fakten aus natürlicher Sprache.
+        
+        Erkennt Muster wie:
+            'ich heiße Duncan'          → ('Name: Duncan', 'personal')
+            'mein Name ist Duncan'      → ('Name: Duncan', 'personal')
+            'ich bin 25 Jahre alt'      → ('Alter: 25', 'personal')
+            'meine Lieblingsfarbe ist Rot' → ('Lieblingsfarbe: Rot', 'personal')
+            'ich mag Pizza'             → ('Mag: Pizza', 'personal')
+            'sonstiger Text'            → ('sonstiger Text', 'personal')
+        
+        Returns:
+            (bereinigter_text, kategorie)
+        """
+        import re
+        lower = text.lower().strip()
+        
+        # Name: "ich heiße X" / "mein name ist X" / "ich bin X" (wenn kein Alter)
+        m = re.match(r'ich hei(?:ß|ss)e\s+(.+)', lower)
+        if m:
+            name = text[m.start(1):m.end(1)].strip()
+            return f"Name: {name}", "personal"
+        
+        m = re.match(r'mein name ist\s+(.+)', lower)
+        if m:
+            name = text[m.start(1):m.end(1)].strip()
+            return f"Name: {name}", "personal"
+        
+        # Alter: "ich bin X Jahre alt"
+        m = re.match(r'ich bin (\d+)\s*(?:jahre?\s*alt)?', lower)
+        if m:
+            return f"Alter: {m.group(1)}", "personal"
+        
+        # Lieblingsfarbe/-essen/etc: "meine X ist Y" / "mein X ist Y"
+        m = re.match(r'mein[e]?\s+(lieblings\w+)\s+ist\s+(.+)', lower)
+        if m:
+            key = text[m.start(1):m.end(1)].strip()
+            val = text[m.start(2):m.end(2)].strip()
+            return f"{key}: {val}", "personal"
+        
+        # "ich mag X" / "ich liebe X"
+        m = re.match(r'ich (?:mag|liebe)\s+(.+)', lower)
+        if m:
+            thing = text[m.start(1):m.end(1)].strip()
+            return f"Mag: {thing}", "personal"
+        
+        # "ich wohne in X" / "ich lebe in X"
+        m = re.match(r'ich (?:wohne|lebe)\s+in\s+(.+)', lower)
+        if m:
+            place = text[m.start(1):m.end(1)].strip()
+            return f"Wohnort: {place}", "personal"
+        
+        # "ich arbeite als X" / "ich bin X von Beruf"
+        m = re.match(r'ich arbeite als\s+(.+)', lower)
+        if m:
+            job = text[m.start(1):m.end(1)].strip()
+            return f"Beruf: {job}", "personal"
+        
+        m = re.match(r'ich bin\s+(.+?)(?:\s+von beruf)?$', lower)
+        if m and not m.group(1).isdigit():
+            # Nur wenn es kein Alter ist und sinnvoll klingt
+            role = text[m.start(1):m.end(1)].strip()
+            if len(role) > 2:
+                return f"Rolle: {role}", "personal"
+        
+        # Fallback: Originaltext beibehalten
+        return text.strip(), "personal"
+
     def send_message(self):
         """Sendet eine Nachricht an Astra"""
         if not self.current_chat:
@@ -595,8 +668,10 @@ class ChatWindow(QMainWindow):
                 if memory_text.lower().startswith(prefix):
                     memory_text = memory_text[len(prefix):]
                     break
+            # Intelligente Fakten-Extraktion
+            memory_text, category = self._parse_memory_fact(memory_text)
             if memory_text:
-                self.memory_manager.learn(memory_text, "personal")
+                self.memory_manager.learn(memory_text, category)
                 display_text = memory_text
                 
                 self._add_user_bubble(message)
@@ -1152,26 +1227,26 @@ class ChatWindow(QMainWindow):
             else:
                 QMessageBox.critical(self, "❌", "Fehler beim Löschen des Chats")
     
-    def _fetch_available_models(self) -> list[str]:
-        """Holt verfügbare Modelle von Ollama (kurzer Timeout!), Fallback auf hardcoded Liste."""
-        try:
-            import requests
-            response = requests.get(f"{self.ollama.host}/api/tags", timeout=1.5)
-            if response.status_code == 200:
-                data = response.json()
-                live = [m["name"] for m in data.get("models", [])]
-                if live:
-                    astra_logger.info(f"🔄 {len(live)} Modelle von Ollama geladen: {live}")
-                    return live
-        except Exception as e:
-            astra_logger.warning(f"⚠️ Modell-Abfrage fehlgeschlagen: {e}")
-        astra_logger.info("📋 Nutze Fallback-Modellliste aus config")
-        return list(OLLAMA_MODELS)
+    def _fetch_available_models_async(self):
+        """Holt Modelle von Ollama im Hintergrund und cacht sie."""
+        def _fetch():
+            try:
+                import requests
+                response = requests.get(f"{self.ollama.host}/api/tags", timeout=3)
+                if response.status_code == 200:
+                    data = response.json()
+                    live = [m["name"] for m in data.get("models", [])]
+                    if live:
+                        self._cached_models = live
+                        astra_logger.info(f"🔄 {len(live)} Modelle gecacht: {live}")
+            except Exception as e:
+                astra_logger.warning(f"⚠️ Modell-Abfrage fehlgeschlagen: {e}")
+        Thread(target=_fetch, daemon=True).start()
 
     def open_settings(self):
-        """Öffnet die Einstellungen"""
-        # 🔄 Live-Modelle von Ollama holen (Fallback: hardcoded Liste)
-        live_models = self._fetch_available_models()
+        """Öffnet die Einstellungen (sofort, ohne zu blocken)"""
+        # Nutze gecachte Modelle (werden beim Start asynchron geladen)
+        live_models = getattr(self, '_cached_models', None) or list(OLLAMA_MODELS)
         
         settings_dialog = SettingsDialog(
             self, 
