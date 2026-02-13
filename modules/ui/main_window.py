@@ -60,7 +60,7 @@ from modules.logger import astra_logger
 
 # Modularisierte Imports aus ui Submodule
 from modules.ui.styles import StyleSheet
-from modules.ui.workers import LLMStreamWorker, HealthWorker, SearchWorker
+from modules.ui.workers import LLMStreamWorker, HealthWorker, SearchWorker, MemoryExtractWorker
 from modules.ui.settings_manager import SettingsManager
 from modules.ui.settings_dialog import SettingsDialog
 from modules.ui.rich_formatter import RichFormatter
@@ -566,96 +566,47 @@ class ChatWindow(QMainWindow):
         self.message_input.setEnabled(True)
         self.is_waiting_for_response = False
     
-    @staticmethod
-    def _parse_memory_fact(text: str) -> tuple[str, str]:
-        """Extrahiert strukturierte Fakten aus natürlicher Sprache.
+    def _start_memory_extraction(self, raw_text: str):
+        """Startet LLM-basierte Faktenextraktion im Hintergrund.
         
-        Erkennt Muster wie:
-            'ich heiße Duncan'          → ('Name: Duncan', 'personal')
-            'mein Name ist Duncan'      → ('Name: Duncan', 'personal')
-            'ich bin 25 Jahre alt'      → ('Alter: 25', 'personal')
-            'meine Lieblingsfarbe ist Rot' → ('Lieblingsfarbe: Rot', 'personal')
-            'ich mag Pizza'             → ('Mag: Pizza', 'personal')
-            'sonstiger Text'            → ('sonstiger Text', 'personal')
-        
-        Returns:
-            (bereinigter_text, kategorie)
+        Nutzt das lokale Ollama-Modell um natürliche Sprache in
+        strukturierte Fakten (z.B. 'Name: Duncan') umzuwandeln.
         """
-        import re
-        lower = text.lower().strip()
+        self._memory_worker = MemoryExtractWorker(
+            self.ollama, self._selected_model, raw_text
+        )
+        self._memory_worker.finished.connect(self._on_memory_extracted)
+        self._memory_worker.failed.connect(self._on_memory_extract_error)
+        self._memory_worker.start()
+    
+    def _on_memory_extracted(self, extracted_text: str, category: str):
+        """Callback wenn LLM-Extraktion erfolgreich abgeschlossen ist"""
+        self.memory_manager.learn(extracted_text, category)
         
-        # Name: "ich heiße X" (Hauptsatz)
-        m = re.match(r'ich hei(?:ß|ss)e\s+(.+)', lower)
-        if m:
-            name = text[m.start(1):m.end(1)].strip()
-            return f"Name: {name}", "personal"
+        display_text = extracted_text
+        self._add_assistant_bubble(
+            f"✅ Gespeichert! Ich merke mir: {display_text}",
+            source="memory", confidence=0.95
+        )
+        self.db.save_message(
+            self.current_chat, "assistant",
+            f"✅ Gespeichert! Ich merke mir: {display_text}"
+        )
+        self.is_waiting_for_response = False
+    
+    def _on_memory_extract_error(self, fallback_text: str):
+        """Fallback wenn LLM-Extraktion fehlschlägt — speichere Rohtext"""
+        self.memory_manager.learn(fallback_text, "personal")
         
-        # Name: "ich X heiße" (Nebensatz-Wortstellung: Verb am Ende)
-        m = re.match(r'ich\s+(.+?)\s+hei(?:ß|ss)e\s*$', lower)
-        if m:
-            name = text[m.start(1):m.end(1)].strip()
-            return f"Name: {name}", "personal"
-        
-        # Name: "mein name ist X"
-        m = re.match(r'mein name ist\s+(.+)', lower)
-        if m:
-            name = text[m.start(1):m.end(1)].strip()
-            return f"Name: {name}", "personal"
-        
-        # Alter: "ich bin X Jahre alt" / "ich X Jahre alt bin" (Nebensatz)
-        m = re.match(r'ich bin (\d+)\s*(?:jahre?\s*alt)?', lower)
-        if m:
-            return f"Alter: {m.group(1)}", "personal"
-        m = re.match(r'ich (\d+)\s*(?:jahre?\s*alt)\s+bin\s*$', lower)
-        if m:
-            return f"Alter: {m.group(1)}", "personal"
-        
-        # Wohnort: "ich in X wohne/lebe" (Nebensatz) + Hauptsatz
-        m = re.match(r'ich (?:wohne|lebe)\s+in\s+(.+)', lower)
-        if m:
-            place = text[m.start(1):m.end(1)].strip()
-            return f"Wohnort: {place}", "personal"
-        m = re.match(r'ich in\s+(.+?)\s+(?:wohne|lebe)\s*$', lower)
-        if m:
-            place = text[m.start(1):m.end(1)].strip()
-            return f"Wohnort: {place}", "personal"
-        
-        # Beruf: "ich als X arbeite" (Nebensatz) + Hauptsatz
-        m = re.match(r'ich arbeite als\s+(.+)', lower)
-        if m:
-            job = text[m.start(1):m.end(1)].strip()
-            return f"Beruf: {job}", "personal"
-        m = re.match(r'ich als\s+(.+?)\s+arbeite\s*$', lower)
-        if m:
-            job = text[m.start(1):m.end(1)].strip()
-            return f"Beruf: {job}", "personal"
-        
-        # Lieblingsfarbe/-essen/etc: "meine X ist Y" / "mein X ist Y"
-        m = re.match(r'mein[e]?\s+(lieblings\w+)\s+ist\s+(.+)', lower)
-        if m:
-            key = text[m.start(1):m.end(1)].strip()
-            val = text[m.start(2):m.end(2)].strip()
-            return f"{key}: {val}", "personal"
-        
-        # "ich mag X" / "ich liebe X" + Nebensatz: "ich X mag/liebe"
-        m = re.match(r'ich (?:mag|liebe)\s+(.+)', lower)
-        if m:
-            thing = text[m.start(1):m.end(1)].strip()
-            return f"Mag: {thing}", "personal"
-        m = re.match(r'ich\s+(.+?)\s+(?:mag|liebe)\s*$', lower)
-        if m:
-            thing = text[m.start(1):m.end(1)].strip()
-            return f"Mag: {thing}", "personal"
-        
-        # "ich bin X" — Rolle/Eigenschaft (kein Alter)
-        m = re.match(r'ich bin\s+(.+?)(?:\s+von beruf)?$', lower)
-        if m and not m.group(1).isdigit():
-            role = text[m.start(1):m.end(1)].strip()
-            if len(role) > 2:
-                return f"Rolle: {role}", "personal"
-        
-        # Fallback: Originaltext beibehalten
-        return text.strip(), "personal"
+        self._add_assistant_bubble(
+            f"✅ Gespeichert: {fallback_text}\n⚠️ Faktenextraktion fehlgeschlagen — Rohtext gespeichert",
+            source="memory", confidence=0.7
+        )
+        self.db.save_message(
+            self.current_chat, "assistant",
+            f"✅ Gespeichert! Ich merke mir: {fallback_text}"
+        )
+        self.is_waiting_for_response = False
 
     def send_message(self):
         """Sendet eine Nachricht an Astra"""
@@ -682,7 +633,7 @@ class ChatWindow(QMainWindow):
             self._stop_generation()
             return
         
-        # "Merke" Funktion — unterstützt: "merke ...", "merke dir ...", "merke dir dass ..."
+        # "Merke" Funktion — LLM-basierte Faktenextraktion via lokales Ollama
         if message.lower().startswith("merke"):
             memory_text = message[5:].strip()
             # Natürliche Präfixe entfernen die keinen Inhalt tragen
@@ -690,22 +641,26 @@ class ChatWindow(QMainWindow):
                 if memory_text.lower().startswith(prefix):
                     memory_text = memory_text[len(prefix):]
                     break
-            # Intelligente Fakten-Extraktion
-            memory_text, category = self._parse_memory_fact(memory_text)
             if memory_text:
-                self.memory_manager.learn(memory_text, category)
-                display_text = memory_text
-                
                 self._add_user_bubble(message)
-                self._add_assistant_bubble(
-                    f"✅ Gespeichert! Ich merke mir: {display_text}",
-                    source="memory", confidence=0.95
-                )
-                
                 self.db.save_message(self.current_chat, "user", message)
-                self.db.save_message(self.current_chat, "assistant", f"✅ Gespeichert! Ich merke mir: {display_text}")
-                
                 self.message_input.clear()
+                
+                if self._ollama_alive:
+                    # 🧠 LLM-basierte Extraktion im Hintergrund
+                    self.is_waiting_for_response = True
+                    self._start_memory_extraction(memory_text)
+                else:
+                    # ⚠️ Fallback: Rohtext speichern wenn Ollama offline
+                    self.memory_manager.learn(memory_text, "personal")
+                    self._add_assistant_bubble(
+                        f"✅ Gespeichert (Rohtext): {memory_text}\n⚠️ Ollama offline — keine Faktenextraktion",
+                        source="memory", confidence=0.7
+                    )
+                    self.db.save_message(
+                        self.current_chat, "assistant",
+                        f"✅ Gespeichert! Ich merke mir: {memory_text}"
+                    )
                 return
         
         # User-Message anzeigen

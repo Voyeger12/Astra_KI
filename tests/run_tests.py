@@ -406,6 +406,51 @@ class TestOllamaClient(unittest.TestCase):
         self.assertEqual(client.max_retries, OLLAMA_RETRY_ATTEMPTS)
         self.assertEqual(client.initial_retry_delay, OLLAMA_RETRY_DELAY)
 
+    def test_extract_fact_success(self):
+        """extract_fact() gibt strukturierten Fakt zurück bei erfolgreicher LLM-Antwort"""
+        from modules.ollama_client import OllamaClient
+        from unittest.mock import patch, MagicMock
+        client = OllamaClient()
+        
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "message": {"content": "Name: Duncan"}
+        }
+        
+        with patch("requests.post", return_value=mock_response):
+            result = client.extract_fact("ich heiße Duncan", "qwen2.5:14b")
+        
+        self.assertEqual(result, "Name: Duncan")
+
+    def test_extract_fact_fallback_on_error(self):
+        """extract_fact() gibt Originaltext zurück bei Netzwerk-Fehler"""
+        from modules.ollama_client import OllamaClient
+        from unittest.mock import patch
+        client = OllamaClient()
+        
+        with patch("requests.post", side_effect=Exception("Timeout")):
+            result = client.extract_fact("ich mag Pizza", "qwen2.5:14b")
+        
+        self.assertEqual(result, "ich mag Pizza")
+
+    def test_extract_fact_invalid_response(self):
+        """extract_fact() gibt Originaltext zurück bei ungültiger LLM-Antwort"""
+        from modules.ollama_client import OllamaClient
+        from unittest.mock import patch, MagicMock
+        client = OllamaClient()
+        
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "message": {"content": ""}
+        }
+        
+        with patch("requests.post", return_value=mock_response):
+            result = client.extract_fact("test text", "qwen2.5:14b")
+        
+        self.assertEqual(result, "test text")
+
 
 # ============================================================================
 # 6. RICH FORMATTER TESTS

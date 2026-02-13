@@ -65,6 +65,66 @@ class OllamaClient:
         except Exception:
             return False
     
+    def extract_fact(self, text: str, model: str) -> str:
+        """Extrahiert strukturierte Fakten aus natürlicher Sprache via LLM.
+        
+        Sendet einen kurzen Prompt an das lokale Ollama-Modell um Fakten
+        wie Name, Alter, Wohnort etc. aus Freitext zu extrahieren.
+        
+        Args:
+            text: Der zu analysierende Text (z.B. "ich heiße Duncan")
+            model: Das zu verwendende Modell
+        
+        Returns:
+            Strukturierter Fakt (z.B. "Name: Duncan") oder Originaltext als Fallback
+        """
+        prompt = (
+            "Extrahiere den Fakt aus folgendem Text und gib ihn in GENAU diesem Format zurück:\n"
+            "Kategorie: Wert\n\n"
+            "Mögliche Kategorien: Name, Alter, Wohnort, Beruf, Lieblingsfarbe, "
+            "Lieblingsessen, Hobby, Mag, Rolle, Fakt\n\n"
+            "Beispiele:\n"
+            '- "ich heiße Duncan" → Name: Duncan\n'
+            '- "ich bin 25 Jahre alt" → Alter: 25\n'
+            '- "ich wohne in Berlin" → Wohnort: Berlin\n'
+            '- "ich arbeite als Programmierer" → Beruf: Programmierer\n'
+            '- "ich mag Pizza" → Mag: Pizza\n'
+            '- "meine Lieblingsfarbe ist Rot" → Lieblingsfarbe: Rot\n'
+            '- "ich Duncan heiße" → Name: Duncan\n'
+            '- "ich in Berlin wohne" → Wohnort: Berlin\n'
+            '- "ich als Lehrer arbeite" → Beruf: Lehrer\n'
+            '- "Katzen sind cool" → Fakt: Katzen sind cool\n\n'
+            f'Text: "{text}"\n\n'
+            'Antworte NUR mit "Kategorie: Wert", nichts anderes. '
+            'Keine Erklärung, kein Satz, keine Anführungszeichen.'
+        )
+        
+        try:
+            response = requests.post(
+                f"{self.base_url}/chat",
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.1,
+                        "num_predict": 50,
+                    },
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                result = response.json().get("message", {}).get("content", "").strip()
+                # Validierung: Muss "Kategorie: Wert" Format haben
+                if ":" in result and len(result) < 200:
+                    # Bereinigen: Anführungszeichen, Whitespace, nur erste Zeile
+                    result = result.strip('"\'\'').strip()
+                    result = result.split('\n')[0].strip()
+                    return result
+            return text  # Fallback: Originaltext
+        except Exception:
+            return text  # Fallback: Originaltext
+    
     def chat_stream(self, model: str, messages: List[Dict[str, str]], temperature: float = 0.7, callback=None, cancel_check=None):
         """
         Sendet eine Chat-Anfrage mit STREAMING (Text wird in Echtzeit empfangen)
