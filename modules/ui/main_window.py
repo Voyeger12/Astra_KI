@@ -44,8 +44,9 @@ class MultiLineInput(QTextEdit):
         """Eigenes Kontextmenü mit explizitem Styling (globales Stylesheet überschreiben)"""
         menu = self.createStandardContextMenu()
         menu.setStyleSheet(self._MENU_STYLE)
-        menu.exec(event.globalPos())
-        menu.deleteLater()
+        # setAttribute sorgt dafür, dass Qt das Menü nach dem Schließen selbst aufräumt
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        menu.popup(event.globalPos())
 
     def keyPressEvent(self, event):
         """Enter sendet, Shift+Enter fügt Zeilenumbruch ein."""
