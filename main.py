@@ -66,6 +66,12 @@ try:
                 )
                 return 1
             
+            # ⚡ GPU erkennen & Ollama konfigurieren
+            from modules.gpu_detect import configure_ollama_gpu
+            gpu_info = configure_ollama_gpu()
+            print(f"🎮 GPU: {gpu_info.summary()}")
+            log_info(f"GPU erkannt: {gpu_info.summary()}", "STARTUP")
+            
             # Prüfe Ollama-Verbindung
             print("🔍 Prüfe Ollama-Verbindung...")
             ollama = OllamaClient(OLLAMA_HOST)
@@ -98,6 +104,7 @@ try:
             print("🚀 Starte ASTRA AI...")
             log_info("Starte ChatWindow", "STARTUP")
             window = ChatWindow(db=db)
+            window._gpu_info = gpu_info  # GPU-Info für Statusanzeige
             window.show()
             
             log_info("Anwendung erfolgreich gestartet", "STARTUP")

@@ -7,7 +7,7 @@ Kommunikation mit Ollama LLM mit adaptiven Timeouts
 import requests
 import json
 from typing import List, Dict
-from config import OLLAMA_HOST, OLLAMA_TIMEOUTS, OLLAMA_RETRY_ATTEMPTS, OLLAMA_RETRY_DELAY
+from config import OLLAMA_HOST, OLLAMA_TIMEOUTS, OLLAMA_RETRY_ATTEMPTS, OLLAMA_RETRY_DELAY, OLLAMA_PERFORMANCE
 
 
 class OllamaClient:
@@ -20,6 +20,8 @@ class OllamaClient:
         self.model_timeouts = OLLAMA_TIMEOUTS
         self.max_retries = OLLAMA_RETRY_ATTEMPTS
         self.initial_retry_delay = OLLAMA_RETRY_DELAY
+        # ⚡ Performance-Optionen
+        self.performance = OLLAMA_PERFORMANCE
     
     def _get_timeout(self, model: str) -> int:
         """Intelligent Timeout basierend auf Modell bestimmen"""
@@ -46,6 +48,22 @@ class OllamaClient:
             return []
         except Exception:
             return []
+    
+    def preload_model(self, model: str) -> bool:
+        """Lädt ein Modell vorab in den VRAM für sofortige Antworten"""
+        try:
+            response = requests.post(
+                f"{self.base_url}/chat",
+                json={
+                    "model": model,
+                    "messages": [],
+                    "keep_alive": self.performance.get("keep_alive", "30m"),
+                },
+                timeout=60
+            )
+            return response.status_code == 200
+        except Exception:
+            return False
     
     def chat_stream(self, model: str, messages: List[Dict[str, str]], temperature: float = 0.7, callback=None):
         """
@@ -79,7 +97,13 @@ class OllamaClient:
                     "model": model,
                     "messages": messages,
                     "stream": True,  # WICHTIG: Streaming aktivieren
-                    "temperature": temperature
+                    "options": {
+                        "temperature": temperature,
+                        "num_ctx": self.performance.get("num_ctx", 4096),
+                        "num_batch": self.performance.get("num_batch", 512),
+                        "num_predict": self.performance.get("num_predict", -1),
+                    },
+                    "keep_alive": self.performance.get("keep_alive", "30m"),
                 }
                 
                 # 🔥 POST mit reduzierten Timeouts für schnelleres Failover

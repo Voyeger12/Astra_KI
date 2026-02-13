@@ -1,229 +1,187 @@
-# ASTRA v0.2 - AI Chat Assistant
+<div align="center">
 
-**Production-Ready** Intelligente Chat-Anwendung mit lokalem LLM (Ollama), Live Internet-Suche, Auto-Learning und Langzeitgedächtnis.
+# 🔴 ASTRA AI
 
-## v0.2 Status: ✅ PRODUCTION READY
+**Dein lokaler KI-Assistent — privat, schnell, intelligent.**
 
-- ✨ **Internet-Suche**: DuckDuckGo Integration (asynchron, non-blocking)
-- 🚀 **Auto-Learning**: Intelligentes Memory-System (Namen, Ort, Interessen)
-- 📊 **Streaming LLM**: Text kommt in Echtzeit
-- ⚡ **Performance**: Nachricht sofort sichtbar, <1s UI-Response
-- 🔐 **Sicherheit**: Input-Validation, Rate-Limiting, Database-Integrity
-- 🧪 **Getestet**: 26/26 Tests ✅ (Database, Memory, Search, Utils)
+Moderne Desktop-App mit Echtzeit-Streaming, Langzeitgedächtnis, Internet-Suche und automatischer GPU-Beschleunigung. Läuft komplett lokal über [Ollama](https://ollama.ai).
+
+[![Python 3.13+](https://img.shields.io/badge/Python-3.13+-blue?logo=python&logoColor=white)](https://python.org)
+[![PyQt6](https://img.shields.io/badge/UI-PyQt6-green?logo=qt)](https://pypi.org/project/PyQt6/)
+[![Ollama](https://img.shields.io/badge/LLM-Ollama-black?logo=ollama)](https://ollama.ai)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+
+</div>
 
 ---
 
-## Installation
+## ✨ Features
+
+| Feature | Beschreibung |
+|---------|-------------|
+| 🚀 **Streaming-Antworten** | Text erscheint in Echtzeit, Chunk für Chunk |
+| 🧠 **Langzeitgedächtnis** | Merkt sich Namen, Vorlieben, Fakten über `[MERKEN:]`-Tags |
+| 🔍 **Internet-Suche** | DuckDuckGo-Integration für aktuelle Infos (Wetter, News, etc.) |
+| 🎮 **Auto GPU-Erkennung** | NVIDIA → CUDA, AMD RDNA 3 → ROCm, AMD RDNA 4 → Vulkan, Intel → Vulkan |
+| 💬 **Multi-Chat** | Unbegrenzte parallele Chat-Sessions mit separater History |
+| 🎨 **Rich Formatting** | Markdown-Rendering, Syntax-Highlighting, Code-Blöcke |
+| ⚙️ **Konfigurierbar** | Modell, Temperatur, Textgröße, Theme über Settings-Dialog |
+| 🔒 **Sicherheit** | Input-Validation, Rate-Limiting, XSS/SQLi-Schutz |
+| 📦 **Standalone EXE** | Kann als Windows-EXE gebaut werden (keine Python-Installation nötig) |
+
+---
+
+## 🚀 Quick Start
 
 ### Voraussetzungen
 
-- **Python 3.8+** (getestet mit 3.11)
-- **Ollama**: https://ollama.ai (installiert und laufen gelassen)
-- **Ein Model**: z.B. `ollama pull qwen2.5:14b` (empfohlen, ~14GB)
-  - Alternativen: dolphin-llama3:latest, llama3.2
-- **Internet**: Für Web-Suche Feature (optional deaktivierbar)
+- **Python 3.13+**
+- **Ollama** — [ollama.ai](https://ollama.ai) installieren
+- Ein LLM-Modell herunterladen:
+  ```bash
+  ollama pull qwen2.5:14b    # Empfohlen (~9 GB)
+  ```
 
-### Quick Start
+### Installation
 
-**Windows:**
 ```bash
-# 1. Virtual Environment
+# Repository klonen
+git clone https://github.com/Voyeger12/Astra_KI.git
+cd Astra_KI
+
+# Virtual Environment erstellen & aktivieren
 python -m venv venv
-.\venv\Scripts\activate
+.\venv\Scripts\activate        # Windows
+# source venv/bin/activate     # Linux/Mac
 
-# 2. Dependencies
+# Dependencies installieren
 pip install -r requirements.txt
+```
 
-# 3. Ollama starten (separates Terminal ZUERST!)
-ollama serve
+### Starten
 
-# 4. App starten (im ersten Terminal)
+```bash
+# Option 1: Direkt starten
 python main.py
+
+# Option 2: Über das Start-Skript (Windows)
+start.bat
 ```
 
-**Linux/Mac:**
-```bash
-# 1. Virtual Environment
-python3 -m venv venv
-source venv/bin/activate
-
-# 2. Dependencies  
-pip install -r requirements.txt
-
-# 3. Ollama (separates Terminal)
-ollama serve
-
-# 4. App
-python main.py
-```
-
-### Oder direkt aus Windows EXE
-```bash
-python build_exe.py        # Erstellt standalone EXE
-# Dann: dist/ASTRA\ AI.exe doppelklick
-```
 
 ---
 
-## Features
+## 🎮 GPU-Unterstützung
 
-### 🔍 Internet-Suche (v0.2)
+ASTRA erkennt beim Start automatisch die GPU und setzt die optimalen Ollama-Einstellungen:
 
-**Intelligente Web-Recherche mit DuckDuckGo:**
-- ✅ Automatische Aktivierung für Info-Fragen
-- ✅ Asynchron/Non-Blocking (UI bleibt fluent)
-- ✅ Intelligente Zusammenfassung
-- ✅ Fallback bei Fehler
+| GPU | Backend | Automatisch |
+|-----|---------|-------------|
+| NVIDIA (alle) | CUDA | ✅  |
+| AMD RX 7000 (RDNA 3) | ROCm | ✅ |
+| AMD RX 9000 (RDNA 4) | Vulkan | ✅ |
+| Intel Arc | Vulkan | ✅ |
+| Keine dedizierte GPU | CPU | ✅ |
 
-**Beispiel:**
-```
-Du: "Wie ist das Wetter in München?"
-ASTRA: "Das Wetter in München ist derzeit sonnig mit 12°C..."
-       (mit echten aktuellen Daten von DuckDuckGo)
-```
-
-### 💾 Auto-Learning Memory
-
-**Intelligente Informationen-Erfassung:**
-
-
-### 📱 Multi-Chat Sessions
-- Unbegrenzte parallele Chats
-- Jeder Chat mit separater History
-- Auto-Delete & Rename
+Die Statusleiste zeigt den aktiven Modus: `🟢 Online ⚡VULKAN` / `⚡CUDA` / `🐢CPU`
 
 ---
 
-## Testing
-
-```bash
-# Komplette Suite (26 Tests, ~10s) ✅ ALL PASSING
-python tests/test_suite.py
-
-# Mit Details & Interaktiv
-python tests/runner.py
-```
-
-**Test Coverage:**
-- ✅ Database (4 Tests)
-- ✅ Memory & Auto-Learning (8 Tests) 
-- ✅ Memory System Prompt (2 Tests)
-- ✅ Text Utilities (2 Tests)
-- ✅ Search Logic (8 Tests)
-- **Total: 26/26 PASSING**
-
----
-
-## Projekt-Struktur
+## 📁 Projektstruktur
 
 ```
-📁 ASTRA 2.0
-├── main.py                    Hauptprogramm
-├── config.py                  Zentrale Konfiguration
-├── persona.txt                KI Persona
-├── requirements.txt           Dependencies
-├── build_exe.py               PyInstaller Builder
+ASTRA 2.0/
+├── main.py                         # Einstiegspunkt mit Crash-Recovery
+├── config.py                       # Zentrale Konfiguration
+├── start.bat                       # Windows-Launcher
+├── requirements.txt                # Python-Dependencies
+├── build_exe.py                    # PyInstaller → Standalone EXE
 │
-├── 📁 modules/                Core-Engine
-│   ├── database.py            SQLite + WAL
-│   ├── memory.py              Auto-Learning
-│   ├── ollama_client.py       LLM Integration
-│   ├── utils.py               Security, Search
-│   └── 📁 ui/                 PyQt6 Interface
+├── modules/
+│   ├── database.py                 # SQLite mit WAL-Journaling
+│   ├── memory.py                   # Langzeitgedächtnis (MERKEN-Tags)
+│   ├── ollama_client.py            # LLM-Streaming mit adaptiven Timeouts
+│   ├── gpu_detect.py               # Auto GPU-Erkennung & Konfiguration
+│   ├── logger.py                   # Strukturiertes Logging
+│   ├── utils.py                    # Security, Rate-Limiting, Suche
+│   └── ui/
+│       ├── main_window.py          # Hauptfenster (PyQt6)
+│       ├── chat_display.py         # Chat-Bubbles & Streaming-Anzeige
+│       ├── rich_formatter.py       # Markdown → HTML Rendering
+│       ├── settings_dialog.py      # Einstellungs-Dialog
+│       ├── settings_manager.py     # JSON-basierte Settings
+│       ├── workers.py              # QThread-Worker (LLM, Suche, Format)
+│       ├── styles.py               # Qt Stylesheets
+│       └── colors.py               # Farbkonstanten
 │
-├── 📁 tests/                  26 Tests ✅
-├── 📁 data/                   Datenbank & Backups
-├── 📁 logs/                   Logging Output
-└── 📁 config/                 Settings (JSON)
+├── config/settings.json            # Benutzer-Einstellungen
+├── data/                           # SQLite-Datenbank & Backups
+├── logs/                           # Log-Dateien
+├── tests/                          # Test-Suite
+└── assets/                         # Icons & Assets
 ```
 
 ---
 
-## Sicherheit & Robustheit
+## ⚙️ Konfiguration
 
-| Feature | Status |
-|---------|--------|
-| Input Validation | ✅ XSS & SQLi Protection |
-| Rate-Limiting | ✅ Max 30 Messages/Minute |
-| Database | ✅ WAL-Journaling, Concurrent Safe |
-| Error Handling | ✅ Graceful Recovery, Retry 3x |
-| Async Safety | ✅ Thread-safe Design |
-| Logging | ✅ Zentral strukturiert |
+### Settings-Dialog (in der App)
 
----
+Über das Zahnrad-Icon in der UI einstellbar:
+- **Modell** — LLM-Modell wechseln (z.B. qwen2.5:14b, llama3.2, mistral)
+- **Temperatur** — Kreativität der Antworten (0.0 = präzise, 1.0 = kreativ)
+- **Textgröße** — Schriftgröße im Chat
+- **Internet-Suche** — Ein/Aus
+- **Gedächtnis** — Ein/Aus
 
-## Konfiguration
+### config.py (für Entwickler)
 
-### config.py
 ```python
 OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_MODEL = "qwen2.5:14b"
-MAX_MESSAGE_LENGTH = 10000
-INTERNET_SEARCH_ENABLED = True
-```
 
-### config/settings.json (UI-Persistiert)
-```json
-{
-  "text_size": 12,
-  "selected_model": "qwen2.5:14b",
-  "temperature": 0.77,
-  "search_enabled": true,
-  "memory_enabled": true
+# Performance-Tuning
+OLLAMA_PERFORMANCE = {
+    "keep_alive": "30m",    # Modell im VRAM behalten
+    "num_ctx": 4096,        # Context-Window
+    "num_batch": 512,       # Batch-Größe
 }
+MAX_CHAT_HISTORY_MESSAGES = 20  # Kontext-Limit
 ```
 
 ---
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
 | Problem | Lösung |
 |---------|--------|
-| "🔴 Offline" Status | `ollama serve` in separatem Terminal |
-| ModuleNotFoundError: PyQt6 | `pip install PyQt6>=6.6.0` |
-| database is locked | App neustarten |
-| Message nicht sichtbar | `taskkill /F /IM python.exe` |
-| Search hängt | Internet-Verbindung prüfen |
-| Model zu langsam | `ollama pull llama3.2` (kleiner/schneller) |
+| 🔴 Offline-Status | Ollama starten: `ollama serve` |
+| 🐢 Langsame Antworten | GPU-Backend in Statusleiste prüfen — `CPU` = keine GPU-Beschleunigung |
+| Kein Modell verfügbar | `ollama pull qwen2.5:14b` |
+| ModuleNotFoundError | `pip install -r requirements.txt` |
+| Database locked | App neustarten |
+| Suche liefert nichts | Internet-Verbindung prüfen |
 
 ---
 
-## Build & Distribution
+## 📦 Build (Windows EXE)
 
-### Windows EXE
 ```bash
-python build_exe.py   # Erstellt: dist/ASTRA AI.exe (~150MB)
-```
-
-**Includes:**
-- PyQt6 UI ✅
-- Internet-Search ✅  
-- Ollama Support ✅
-- Keine Python-Installation auf Ziel-PC nötig
-
-### GitHub Release
-```bash
-git tag v0.2
-git push origin v0.2
-# Upload: dist/ASTRA AI.exe
+python build_exe.py
+# Ergebnis: dist/ASTRA AI.exe (~150 MB, standalone)
 ```
 
 ---
 
-## Roadmap (v0.3+)
+## 🛡️ Sicherheit
 
-- [ ] Speech-to-Text
-- [ ] Text-to-Speech  
-- [ ] More Models (GPT-4, Claude API)
-- [ ] Learning Optimization
-- [ ] Dark Mode Toggle
-
----
-
-## Lizenz
-
-MIT License - Frei zur Verwendung und Modifikation.
+- **Input-Validation** — XSS- und SQL-Injection-Schutz
+- **Rate-Limiting** — Max. 30 Nachrichten pro Minute
+- **SQLite WAL** — Crash-sichere Datenbank
+- **Graceful Recovery** — Automatischer Neuversuch bei Fehlern (3x Retry)
 
 ---
 
-**Status:** ✅ v0.2 Production Ready | 🧪 26/26 Tests ✅ | ⚡ Optimized & Stable
+## 📄 Lizenz
+
+MIT License — Frei zur Verwendung und Modifikation.

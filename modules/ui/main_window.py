@@ -87,10 +87,11 @@ class ChatWindow(QMainWindow):
         self.status_timer.start(500)
         
         self.load_chats()
-        # Start background health worker
+        # Start background health worker + Model Preload
         try:
-            self.health_worker = HealthWorker(self.ollama, interval=2.0)
+            self.health_worker = HealthWorker(self.ollama, interval=2.0, preload_model=self._selected_model)
             self.health_worker.alive.connect(self._on_health_update)
+            self.health_worker.model_loaded.connect(self._on_model_preloaded)
             self.health_worker.start()
         except Exception:
             self._ollama_alive = False
@@ -364,11 +365,19 @@ class ChatWindow(QMainWindow):
     
     def update_status(self):
         """Aktualisiert den Verbindungsstatus"""
+        gpu_tag = ""
+        if hasattr(self, '_gpu_info') and self._gpu_info:
+            backend = self._gpu_info.backend.upper()
+            if backend != "CPU":
+                gpu_tag = f" ⚡{backend}"
+            else:
+                gpu_tag = " 🐢CPU"
+        
         if self.is_waiting_for_response:
-            self.status_text.setText("⏳ Verarbeitung...")
+            self.status_text.setText(f"⏳ Verarbeitung...{gpu_tag}")
             self.status_text.setStyleSheet(f"color: {COLORS['accent']}; font-weight: bold; font-size: 9pt;")
         elif self._ollama_alive:
-            self.status_text.setText("🟢 Online & Ready")
+            self.status_text.setText(f"🟢 Online{gpu_tag}")
             self.status_text.setStyleSheet(f"color: #00cc44; font-weight: bold; font-size: 9pt;")
         else:
             self.status_text.setText("🔴 Offline")
@@ -380,6 +389,14 @@ class ChatWindow(QMainWindow):
             self._ollama_alive = bool(alive)
         except Exception:
             pass
+
+    def _on_model_preloaded(self, success: bool):
+        """Signal-Handler wenn Modell vorab geladen wurde"""
+        from modules.logger import astra_logger
+        if success:
+            astra_logger.info(f"⚡ Modell {self._selected_model} erfolgreich vorgeladen (VRAM warm)")
+        else:
+            astra_logger.warning("⚠️ Modell konnte nicht vorgeladen werden")
 
     def _add_user_bubble(self, text: str, timestamp: str = ""):
         """Fügt eine User-Bubble als Widget hinzu."""
@@ -592,12 +609,13 @@ class ChatWindow(QMainWindow):
             self._current_response = ""  # Reset Response Buffer
             astra_logger.info("🔥 Starting LLM Request...")
             
-            # ⚡ OPTIMIERT: Lade NUR den aktuellen Chat, limitiert auf letzte 30 Nachrichten!
+            # ⚡ OPTIMIERT: Lade NUR den aktuellen Chat, limitiert auf letzte Messages!
             chat_history = self.db.get_chat_messages(self.current_chat)
             # 🔥 WICHTIG: Zu viele Messages = Ollama wird extrem langsam!
-            # Limitiere auf die letzten 30 Messages (15 Konversations-Paare)
-            if len(chat_history) > 30:
-                chat_history = chat_history[-30:]
+            # Limitiere auf die letzten MAX_CHAT_HISTORY_MESSAGES
+            from config import MAX_CHAT_HISTORY_MESSAGES
+            if len(chat_history) > MAX_CHAT_HISTORY_MESSAGES:
+                chat_history = chat_history[-MAX_CHAT_HISTORY_MESSAGES:]
             astra_logger.info(f"📚 Loaded {len(chat_history)} messages for LLM context")
             
             # Erweitere die Benutzer-Nachricht mit Such-Kontext falls vorhanden
