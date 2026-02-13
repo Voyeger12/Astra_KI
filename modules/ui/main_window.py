@@ -630,14 +630,28 @@ class ChatWindow(QMainWindow):
         
         Nutzt das lokale Ollama-Modell um natürliche Sprache in
         strukturierte Fakten (z.B. 'Name: Duncan') umzuwandeln.
-        Verwendet Thread + pyqtSignal für zuverlässige Thread-Kommunikation.
+        Unterstützt Multi-Fakt-Nachrichten (Split an 'und').
         """
         def do_extract(text=raw_text, model=self._selected_model):
             try:
-                astra_logger.info(f"🧠 Memory-Extraktion gestartet: '{text}'")
-                result = self.ollama.extract_fact(text, model)
-                astra_logger.info(f"🧠 Memory-Extraktion Ergebnis: '{result}'")
-                self._memory_result.emit(result, "personal")
+                segments = self._split_multi_facts(text)
+                astra_logger.info(f"🧠 Memory-Extraktion: {len(segments)} Segment(e) aus '{text[:60]}'")
+                
+                results = []
+                for segment in segments:
+                    try:
+                        result = self.ollama.extract_fact(segment, model)
+                        astra_logger.info(f"🧠 Segment '{segment[:40]}' → '{result}'")
+                        if result != segment and ":" in result:
+                            results.append(result)
+                    except Exception as e:
+                        astra_logger.warning(f"🧠 Segment-Extraktion fehlgeschlagen: {e}")
+                
+                if results:
+                    combined = "\n".join(results)
+                    self._memory_result.emit(combined, "personal")
+                else:
+                    self._memory_error.emit(text)
             except Exception as e:
                 astra_logger.warning(f"🧠 Memory-Extraktion fehlgeschlagen: {e}")
                 self._memory_error.emit(text)
@@ -645,22 +659,39 @@ class ChatWindow(QMainWindow):
         Thread(target=do_extract, daemon=True).start()
     
     def _on_memory_extracted(self, extracted_text: str, category: str):
-        """Callback wenn LLM-Extraktion erfolgreich abgeschlossen ist"""
-        astra_logger.info(f"🧠 Speichere in DB: '{extracted_text}' (Kategorie: {category})")
-        success = self.memory_manager.learn(extracted_text, category)
-        astra_logger.info(f"🧠 DB-Speicherung: {'✅ Erfolg' if success else '❌ Fehlgeschlagen'}")
-        if not success:
-            astra_logger.error("🧠 memory_manager.learn() hat False zurückgegeben!")
+        """Callback wenn LLM-Extraktion erfolgreich abgeschlossen ist.
+        Unterstützt Multi-Fakt (Zeilen getrennt durch \n).
+        """
+        facts = [f.strip() for f in extracted_text.split('\n') if f.strip()]
+        saved = []
         
-        display_text = extracted_text
-        self._add_assistant_bubble(
-            f"✅ Gespeichert! Ich merke mir: {display_text}",
-            source="memory", confidence=0.95
-        )
-        self.db.save_message(
-            self.current_chat, "assistant",
-            f"✅ Gespeichert! Ich merke mir: {display_text}"
-        )
+        for fact in facts:
+            astra_logger.info(f"🧠 Speichere in DB: '{fact}' (Kategorie: {category})")
+            success = self.memory_manager.learn(fact, category)
+            if success:
+                saved.append(fact)
+                astra_logger.info(f"🧠 ✅ Gespeichert: '{fact}'")
+            else:
+                astra_logger.error(f"🧠 ❌ Fehlgeschlagen: '{fact}'")
+        
+        if saved:
+            if len(saved) == 1:
+                display = saved[0]
+            else:
+                display = "\n".join(f"• {f}" for f in saved)
+            self._add_assistant_bubble(
+                f"✅ Gespeichert! Ich merke mir: {display}",
+                source="memory", confidence=0.95
+            )
+            self.db.save_message(
+                self.current_chat, "assistant",
+                f"✅ Gespeichert! Ich merke mir: {display}"
+            )
+        else:
+            self._add_assistant_bubble(
+                "⚠️ Konnte keine Fakten extrahieren.",
+                source="memory", confidence=0.5
+            )
         self.is_waiting_for_response = False
     
     def _on_memory_extract_error(self, fallback_text: str):
@@ -677,24 +708,59 @@ class ChatWindow(QMainWindow):
         )
         self.is_waiting_for_response = False
 
+    @staticmethod
+    def _split_multi_facts(text: str) -> list:
+        """Splittet Multi-Fakt-Nachrichten in einzelne Fakten.
+        
+        'Ich heiße Duncan und bin 30 und komme aus Essen'
+        → ['ich heiße Duncan', 'ich bin 30', 'ich komme aus Essen']
+        
+        Fügt 'ich' hinzu wenn ein Segment damit nicht beginnt.
+        """
+        import re as _re
+        # Split an " und " (mit Wortgrenzen)
+        parts = _re.split(r'\s+und\s+', text.strip(), flags=_re.IGNORECASE)
+        
+        if len(parts) <= 1:
+            return [text.strip()]
+        
+        result = []
+        for part in parts:
+            part = part.strip().rstrip('.')
+            if not part:
+                continue
+            # Wenn Segment nicht mit "ich"/"mein" beginnt, "ich" voranstellen
+            lower = part.lower()
+            if not lower.startswith(('ich ', 'mein ')):
+                part = f"ich {part}"
+            result.append(part)
+        
+        return result if result else [text.strip()]
+
     def _silent_memory_extraction(self, raw_text: str):
         """Stille Hintergrund-Extraktion ohne UI-Feedback.
         
         Wird aufgerufen wenn persönliche Fakten erkannt werden
         ohne explizites 'merke' Kommando. Speichert im Hintergrund
         während die normale LLM-Antwort läuft.
+        Unterstützt Multi-Fakt-Nachrichten (z.B. 'ich heiße X und bin Y alt').
         """
         def do_silent_extract(text=raw_text, model=self._selected_model):
             try:
-                astra_logger.info(f"🧠 Stille Auto-Extraktion: '{text}'")
-                result = self.ollama.extract_fact(text, model)
-                astra_logger.info(f"🧠 Stille Extraktion Ergebnis: '{result}'")
-                # Nur speichern wenn Extraktion erfolgreich (nicht Originaltext)
-                if result != text and ":" in result:
-                    self.memory_manager.learn(result, "personal")
-                    astra_logger.info(f"🧠 ✅ Still gespeichert: '{result}'")
-                else:
-                    astra_logger.info("🧠 Stille Extraktion übersprungen (kein strukturierter Fakt)")
+                segments = self._split_multi_facts(text)
+                astra_logger.info(f"🧠 Stille Auto-Extraktion: {len(segments)} Segment(e) aus '{text[:60]}'")
+                
+                for segment in segments:
+                    try:
+                        result = self.ollama.extract_fact(segment, model)
+                        astra_logger.info(f"🧠 Segment '{segment[:40]}' → '{result}'")
+                        if result != segment and ":" in result:
+                            self.memory_manager.learn(result, "personal")
+                            astra_logger.info(f"🧠 ✅ Still gespeichert: '{result}'")
+                        else:
+                            astra_logger.info(f"🧠 Übersprungen (kein strukturierter Fakt)")
+                    except Exception as e:
+                        astra_logger.warning(f"🧠 Segment-Extraktion fehlgeschlagen: {e}")
             except Exception as e:
                 astra_logger.warning(f"🧠 Stille Extraktion fehlgeschlagen: {e}")
         

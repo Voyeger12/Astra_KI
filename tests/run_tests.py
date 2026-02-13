@@ -189,20 +189,20 @@ class TestDatabase(unittest.TestCase):
     def test_memory_crud(self):
         """Memory: Speichern, Laden, Löschen"""
         # Speichern
-        result = self.db.add_memory("User heisst Duncan", "personal")
+        result = self.db.add_memory("User heisst TestUser", "personal")
         self.assertTrue(result)
 
         time.sleep(0.2)
 
         # Laden
         memory = self.db.get_memory()
-        self.assertIn("Duncan", memory)
+        self.assertIn("TestUser", memory)
 
         # Löschen
         self.db.clear_memory()
         time.sleep(0.2)
         memory_after = self.db.get_memory()
-        self.assertTrue("Duncan" not in memory_after or "Noch keine" in memory_after)
+        self.assertTrue("TestUser" not in memory_after or "Noch keine" in memory_after)
 
     def test_backup_system(self):
         """Backup wird erstellt"""
@@ -256,10 +256,10 @@ class TestMemory(unittest.TestCase):
 
     def test_learn_and_recall(self):
         """learn() speichert, get_memory_string() gibt zurück"""
-        self.mm.learn("Benutzer heisst Duncan", "personal")
+        self.mm.learn("Benutzer heisst TestUser", "personal")
         time.sleep(0.2)
         memory = self.mm.get_memory_string()
-        self.assertIn("Duncan", memory)
+        self.assertIn("TestUser", memory)
 
     def test_learn_invalidates_cache(self):
         """Nach learn() wird der System-Prompt Cache invalidiert"""
@@ -270,17 +270,17 @@ class TestMemory(unittest.TestCase):
 
     def test_extract_memory_single_tag(self):
         """Einzelner [MERKEN:...] Tag wird extrahiert"""
-        text = "Klar, ich merke mir das! [MERKEN: Benutzer heisst Duncan]"
+        text = "Klar, ich merke mir das! [MERKEN: Benutzer heisst TestUser]"
         memories = self.mm.extract_memory_from_response(text)
         self.assertEqual(len(memories), 1)
-        self.assertEqual(memories[0], "Benutzer heisst Duncan")
+        self.assertEqual(memories[0], "Benutzer heisst TestUser")
 
     def test_extract_memory_multiple_tags(self):
         """Mehrere [MERKEN:...] Tags werden alle extrahiert"""
-        text = "Ok! [MERKEN: Name ist Duncan] Alles klar. [MERKEN: Alter ist 30]"
+        text = "Ok! [MERKEN: Name ist TestUser] Alles klar. [MERKEN: Alter ist 30]"
         memories = self.mm.extract_memory_from_response(text)
         self.assertEqual(len(memories), 2)
-        self.assertIn("Name ist Duncan", memories)
+        self.assertIn("Name ist TestUser", memories)
         self.assertIn("Alter ist 30", memories)
 
     def test_extract_memory_no_tags(self):
@@ -297,7 +297,7 @@ class TestMemory(unittest.TestCase):
 
     def test_remove_tags_merken(self):
         """[MERKEN:...] Tags werden aus der Response entfernt"""
-        text = "Hallo! [MERKEN: Name Duncan] Wie geht es dir?"
+        text = "Hallo! [MERKEN: Name TestUser] Wie geht es dir?"
         clean = self.mm.remove_tags_from_response(text)
         self.assertNotIn("[MERKEN:", clean)
         self.assertIn("Hallo!", clean)
@@ -305,7 +305,7 @@ class TestMemory(unittest.TestCase):
 
     def test_remove_tags_suche(self):
         """[SUCHE:...] Tags werden entfernt"""
-        text = "Moment, ich schaue nach. [SUCHE: Wetter Berlin]"
+        text = "Moment, ich schaue nach. [SUCHE: Wetter Hamburg]"
         clean = self.mm.remove_tags_from_response(text)
         self.assertNotIn("[SUCHE:", clean)
 
@@ -415,13 +415,13 @@ class TestOllamaClient(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "message": {"content": "Name: Duncan"}
+            "message": {"content": "Name: TestUser"}
         }
         
         with patch("requests.post", return_value=mock_response):
-            result = client.extract_fact("ich heiße Duncan", "qwen2.5:14b")
+            result = client.extract_fact("ich heiße TestUser", "qwen2.5:14b")
         
-        self.assertEqual(result, "Name: Duncan")
+        self.assertEqual(result, "Name: TestUser")
 
     def test_extract_fact_fallback_on_error(self):
         """extract_fact() gibt Originaltext zurück bei Netzwerk-Fehler"""
@@ -938,12 +938,12 @@ class TestMemoryExtended(unittest.TestCase):
 
     def test_dedup_preserves_different_content(self):
         """Deduplizierung behält unterschiedliche Einträge"""
-        self.mm.learn("Benutzer heißt Max", "personal")
+        self.mm.learn("Benutzer heißt TestName", "personal")
         self.mm.learn("Benutzer ist 25 Jahre alt", "personal")
         self.mm.learn("Benutzer mag Python", "personal")
         
         memory = self.mm.get_memory_string_deduplicated()
-        self.assertIn("Max", memory)
+        self.assertIn("TestName", memory)
         self.assertIn("25", memory)
         self.assertIn("Python", memory)
 
@@ -973,7 +973,7 @@ class TestMemoryExtended(unittest.TestCase):
 
     def test_update_or_add_memory_adds_new_category(self):
         """update_or_add_memory() fügt neuen Eintrag hinzu wenn Kategorie nicht existiert"""
-        self.db.add_memory("Name: Duncan", "personal")
+        self.db.add_memory("Name: TestUser", "personal")
         self.db.update_or_add_memory("Alter: 25", "personal")
         entries = self.db.get_memory_entries()
         self.assertEqual(len(entries), 2)
@@ -986,13 +986,37 @@ class TestMemoryExtended(unittest.TestCase):
 
     def test_learn_uses_update_dedup(self):
         """learn() überschreibt bestehende Kategorie statt Duplikat"""
-        self.mm.learn("Name: Max", "personal")
-        self.mm.learn("Name: Duncan", "personal")
+        self.mm.learn("Name: TestName1", "personal")
+        self.mm.learn("Name: TestName2", "personal")
         entries = self.mm.get_memory_entries()
         # Nur 1 Name-Eintrag, der neueste gewinnt
         name_entries = [e for e in entries if e["content"].startswith("Name:")]
         self.assertEqual(len(name_entries), 1)
-        self.assertEqual(name_entries[0]["content"], "Name: Duncan")
+        self.assertEqual(name_entries[0]["content"], "Name: TestName2")
+
+    def test_split_multi_facts_single(self):
+        """_split_multi_facts() gibt einzelne Nachricht unverändert zurück"""
+        from modules.ui.main_window import ChatWindow
+        result = ChatWindow._split_multi_facts("ich heiße TestUser")
+        self.assertEqual(result, ["ich heiße TestUser"])
+
+    def test_split_multi_facts_multiple(self):
+        """_split_multi_facts() splittet Multi-Fakt an 'und'"""
+        from modules.ui.main_window import ChatWindow
+        result = ChatWindow._split_multi_facts(
+            "ich heiße TestUser und bin 30 Jahre alt und komme aus TestCity"
+        )
+        self.assertEqual(len(result), 3)
+        self.assertIn("testuser", result[0].lower())
+        self.assertIn("30", result[1])
+        self.assertIn("testcity", result[2].lower())
+
+    def test_split_multi_facts_adds_ich(self):
+        """_split_multi_facts() fügt 'ich' hinzu wenn Segment ohne 'ich/mein' beginnt"""
+        from modules.ui.main_window import ChatWindow
+        result = ChatWindow._split_multi_facts("ich heiße TestUser und bin 25")
+        self.assertEqual(len(result), 2)
+        self.assertTrue(result[1].lower().startswith("ich "))
 
 
 # ============================================================================
