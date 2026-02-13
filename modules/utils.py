@@ -447,6 +447,7 @@ class HealthChecker:
             ("Logger",        "modules.logger",        "astra_logger"),
             ("GPU-Detect",    "modules.gpu_detect",    "detect_gpu"),
             ("RichFormatter", "modules.ui.rich_formatter", "RichFormatter"),
+            ("Updater",       "modules.updater",       "UpdateChecker"),
         ]
         for name, mod_path, attr in modules:
             try:

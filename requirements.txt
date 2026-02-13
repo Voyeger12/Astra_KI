@@ -10,7 +10,8 @@
 PyQt6>=6.6.0              # Modern desktop UI framework
 
 # ===== INTERNET SEARCH =====
-duckduckgo-search>=3.9.0  # DuckDuckGo Search Engine API
+ddgs>=0.6.0               # DuckDuckGo Search (neues Paket)
+duckduckgo-search>=3.9.0  # DuckDuckGo Search Engine API (Fallback)
 requests>=2.31.0          # HTTP requests (for web content fetching)
 
 # ===== FORMATTING & DISPLAY =====

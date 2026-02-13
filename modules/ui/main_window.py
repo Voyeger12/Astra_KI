@@ -10,10 +10,11 @@ from threading import Thread
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QPushButton, QListWidget, QListWidgetItem, QLineEdit,
-    QFrame, QMessageBox, QLabel, QFileDialog
+    QFrame, QMessageBox, QLabel, QFileDialog,
+    QSystemTrayIcon, QMenu
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QFont, QIcon, QShortcut, QKeySequence
+from PyQt6.QtGui import QFont, QIcon, QShortcut, QKeySequence, QAction
 from pathlib import Path
 
 from config import COLORS, WINDOW_WIDTH, WINDOW_HEIGHT, OLLAMA_MODELS, DEFAULT_MODEL
@@ -30,6 +31,7 @@ from modules.ui.settings_manager import SettingsManager
 from modules.ui.settings_dialog import SettingsDialog
 from modules.ui.rich_formatter import RichFormatter
 from modules.ui.chat_display import ChatDisplayWidget
+from modules.updater import UpdateChecker, CURRENT_VERSION
 
 
 class ChatWindow(QMainWindow):
@@ -98,6 +100,13 @@ class ChatWindow(QMainWindow):
         
         # ⌨️ Keyboard Shortcuts
         self._setup_shortcuts()
+        
+        # 📥 System-Tray
+        self._setup_system_tray()
+        self._force_quit = False  # Flag für echtes Beenden vs. Minimize
+        
+        # 🔄 Auto-Update Check (non-blocking)
+        self._check_for_updates()
     
     def setup_ui(self):
         """Erstellt die Benutzeroberfläche"""
@@ -974,8 +983,30 @@ class ChatWindow(QMainWindow):
             QMessageBox.critical(self, "❌", f"Chat '{new_name}' existiert bereits")
 
     def closeEvent(self, event):
-        """Cleanup beim Beenden - schnell und effizient"""
-        # Stoppe Stream-Timer
+        """Minimize-to-Tray statt Beenden (außer bei Force-Quit)"""
+        if not self._force_quit and QSystemTrayIcon.isSystemTrayAvailable() and hasattr(self, 'tray_icon'):
+            event.ignore()
+            self.hide()
+            self.tray_icon.showMessage(
+                "ASTRA AI",
+                "Läuft weiter im System-Tray. Klicke das Icon zum Öffnen.",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+            return
+        
+        # Echtes Beenden — Cleanup
+        self._cleanup_and_quit(event)
+
+    def _cleanup_and_quit(self, event):
+        """Cleanup aller Worker und Ressourcen beim echten Beenden"""
+        # Tray-Icon entfernen
+        try:
+            if hasattr(self, 'tray_icon'):
+                self.tray_icon.hide()
+        except Exception:
+            pass
+        
         try:
             self._stop_stream_timer()
         except Exception:
@@ -1086,6 +1117,154 @@ class ChatWindow(QMainWindow):
         if self.current_chat:
             self.select_chat(self.current_chat)
     
+    # ================================================================
+    # AUTO-UPDATE CHECKER
+    # ================================================================
+
+    def _check_for_updates(self):
+        """Startet Update-Check im Hintergrund (non-blocking)"""
+        try:
+            self._update_checker = UpdateChecker()
+            self._update_checker.update_available.connect(self._on_update_available)
+            self._update_checker.no_update.connect(
+                lambda: astra_logger.info(f"✅ ASTRA v{CURRENT_VERSION} ist aktuell")
+            )
+            self._update_checker.check_failed.connect(
+                lambda msg: astra_logger.debug(f"Update-Check: {msg}")
+            )
+            self._update_checker.start()
+        except Exception as e:
+            astra_logger.debug(f"Update-Check übersprungen: {e}")
+
+    def _on_update_available(self, new_version: str, notes: str, url: str):
+        """Zeigt Update-Benachrichtigung im Tray und als Dialog"""
+        astra_logger.info(f"🆕 Update verfügbar: v{new_version}")
+        
+        # Tray-Notification
+        if hasattr(self, 'tray_icon') and self.tray_icon.isVisible():
+            self.tray_icon.showMessage(
+                "🆕 ASTRA Update verfügbar",
+                f"Version {new_version} ist verfügbar!\nKlicke für Details.",
+                QSystemTrayIcon.MessageIcon.Information,
+                5000
+            )
+        
+        # Dialog mit Release-Notes
+        msg = QMessageBox(self)
+        msg.setWindowTitle("🆕 Update verfügbar")
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText(
+            f"<b>ASTRA AI v{new_version}</b> ist verfügbar!<br>"
+            f"Du nutzt aktuell v{CURRENT_VERSION}."
+        )
+        msg.setInformativeText(
+            f"<b>Release-Notes:</b><br>"
+            f"<pre style='font-size:10pt;'>{notes[:400]}</pre>"
+        )
+        msg.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: {COLORS['surface']};
+                color: {COLORS['text']};
+            }}
+            QLabel {{
+                color: {COLORS['text']};
+                font-size: 11pt;
+            }}
+            QPushButton {{
+                background-color: {COLORS['primary']};
+                color: white;
+                border: none;
+                border-radius: 12px;
+                padding: 8px 20px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #ff6b6b;
+            }}
+        """)
+        
+        open_button = msg.addButton("🌐 Download", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Später", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+        
+        if msg.clickedButton() == open_button:
+            import webbrowser
+            webbrowser.open(url)
+
+    # ================================================================
+    # SYSTEM TRAY
+    # ================================================================
+
+    def _setup_system_tray(self):
+        """Richtet System-Tray-Icon mit Kontextmenü ein"""
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+
+        # Icon laden
+        icon_path = Path(__file__).parent.parent.parent / "assets" / "astra_icon.ico"
+        icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon()
+
+        self.tray_icon = QSystemTrayIcon(icon, self)
+        self.tray_icon.setToolTip("ASTRA AI — Neural Intelligence")
+
+        # Kontextmenü
+        tray_menu = QMenu()
+        tray_menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {COLORS['surface']};
+                color: {COLORS['text']};
+                border: 1px solid #2a2a2a;
+                border-radius: 8px;
+                padding: 4px;
+            }}
+            QMenu::item {{
+                padding: 6px 24px;
+                border-radius: 4px;
+            }}
+            QMenu::item:selected {{
+                background-color: {COLORS['primary']};
+            }}
+        """)
+
+        show_action = QAction("🖥️ ASTRA öffnen", self)
+        show_action.triggered.connect(self._tray_show_window)
+        tray_menu.addAction(show_action)
+
+        tray_menu.addSeparator()
+
+        new_chat_action = QAction("💬 Neuer Chat", self)
+        new_chat_action.triggered.connect(lambda: (self._tray_show_window(), self.create_new_chat()))
+        tray_menu.addAction(new_chat_action)
+
+        tray_menu.addSeparator()
+
+        quit_action = QAction("❌ Beenden", self)
+        quit_action.triggered.connect(self._quit_application)
+        tray_menu.addAction(quit_action)
+
+        self.tray_icon.setContextMenu(tray_menu)
+
+        # Doppelklick auf Tray-Icon → Fenster öffnen
+        self.tray_icon.activated.connect(self._on_tray_activated)
+
+        self.tray_icon.show()
+
+    def _on_tray_activated(self, reason):
+        """Reaktion auf Tray-Icon Interaktion"""
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self._tray_show_window()
+
+    def _tray_show_window(self):
+        """Fenster aus Tray wiederherstellen"""
+        self.showNormal()
+        self.activateWindow()
+        self.raise_()
+
+    def _quit_application(self):
+        """Echtes Beenden der Anwendung (aus Tray)"""
+        self._force_quit = True
+        self.close()
+
     # ================================================================
     # KEYBOARD SHORTCUTS
     # ================================================================

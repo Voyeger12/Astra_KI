@@ -109,10 +109,10 @@ class TestLogger(unittest.TestCase):
         self.assertTrue(log_file.exists(), f"Log-Datei nicht gefunden: {log_file}")
 
     def test_log_rotation_config(self):
-        """Log-Rotation ist konfiguriert (10MB, 5 Backups)"""
+        """Log-Rotation ist konfiguriert (10MB, 14 Tage Backups)"""
         from modules.logger import MAX_LOG_SIZE, BACKUP_COUNT
         self.assertEqual(MAX_LOG_SIZE, 10 * 1024 * 1024)
-        self.assertEqual(BACKUP_COUNT, 5)
+        self.assertEqual(BACKUP_COUNT, 14)  # 14 Tage Logs
 
 
 # ============================================================================
@@ -633,6 +633,7 @@ class TestSettingsManager(unittest.TestCase):
         from modules.ui.settings_manager import SettingsManager
         sm1 = SettingsManager(self.config_dir)
         sm1.set("test_key", "test_value")
+        sm1.save_settings()  # Sofort schreiben statt Debounce abwarten
 
         sm2 = SettingsManager(self.config_dir)
         self.assertEqual(sm2.get("test_key"), "test_value")
@@ -1002,6 +1003,63 @@ class TestHealthChecker(unittest.TestCase):
 
 
 # ============================================================================
+# 13. UPDATER TESTS
+# ============================================================================
+class TestUpdater(unittest.TestCase):
+    """Tests für modules/updater.py"""
+
+    def test_import(self):
+        """Updater-Modul importierbar"""
+        from modules.updater import UpdateChecker, CURRENT_VERSION, get_current_version
+        self.assertIsNotNone(UpdateChecker)
+
+    def test_current_version_format(self):
+        """Version hat gültiges Format (X.Y.Z)"""
+        from modules.updater import CURRENT_VERSION
+        parts = CURRENT_VERSION.split(".")
+        self.assertEqual(len(parts), 3)
+        for p in parts:
+            self.assertTrue(p.isdigit(), f"Version-Teil '{p}' ist keine Zahl")
+
+    def test_get_current_version(self):
+        """get_current_version() gibt CURRENT_VERSION zurück"""
+        from modules.updater import get_current_version, CURRENT_VERSION
+        self.assertEqual(get_current_version(), CURRENT_VERSION)
+
+    def test_checker_instantiation(self):
+        """UpdateChecker kann erstellt werden"""
+        from modules.updater import UpdateChecker
+        checker = UpdateChecker("1.0.0")
+        self.assertEqual(checker.current_version, "1.0.0")
+
+
+# ============================================================================
+# 14. SYSTEM TRAY TESTS
+# ============================================================================
+class TestSystemTray(unittest.TestCase):
+    """Tests für System-Tray-Funktionalität"""
+
+    def test_tray_available(self):
+        """QSystemTrayIcon ist importierbar"""
+        from PyQt6.QtWidgets import QSystemTrayIcon
+        self.assertIsNotNone(QSystemTrayIcon)
+
+    def test_main_window_has_tray_methods(self):
+        """ChatWindow hat Tray-Methoden"""
+        from modules.ui.main_window import ChatWindow
+        self.assertTrue(hasattr(ChatWindow, '_setup_system_tray'))
+        self.assertTrue(hasattr(ChatWindow, '_quit_application'))
+        self.assertTrue(hasattr(ChatWindow, '_tray_show_window'))
+        self.assertTrue(hasattr(ChatWindow, '_on_tray_activated'))
+
+    def test_main_window_has_update_methods(self):
+        """ChatWindow hat Update-Methoden"""
+        from modules.ui.main_window import ChatWindow
+        self.assertTrue(hasattr(ChatWindow, '_check_for_updates'))
+        self.assertTrue(hasattr(ChatWindow, '_on_update_available'))
+
+
+# ============================================================================
 # RUNNER
 # ============================================================================
 def run_tests():
@@ -1030,6 +1088,8 @@ def run_tests():
         TestDatabaseExtended,
         TestMemoryExtended,
         TestHealthChecker,
+        TestUpdater,
+        TestSystemTray,
     ]
 
     for cls in test_classes:
