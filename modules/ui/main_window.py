@@ -677,6 +677,71 @@ class ChatWindow(QMainWindow):
         )
         self.is_waiting_for_response = False
 
+    def _silent_memory_extraction(self, raw_text: str):
+        """Stille Hintergrund-Extraktion ohne UI-Feedback.
+        
+        Wird aufgerufen wenn persönliche Fakten erkannt werden
+        ohne explizites 'merke' Kommando. Speichert im Hintergrund
+        während die normale LLM-Antwort läuft.
+        """
+        def do_silent_extract(text=raw_text, model=self._selected_model):
+            try:
+                astra_logger.info(f"🧠 Stille Auto-Extraktion: '{text}'")
+                result = self.ollama.extract_fact(text, model)
+                astra_logger.info(f"🧠 Stille Extraktion Ergebnis: '{result}'")
+                # Nur speichern wenn Extraktion erfolgreich (nicht Originaltext)
+                if result != text and ":" in result:
+                    self.memory_manager.learn(result, "personal")
+                    astra_logger.info(f"🧠 ✅ Still gespeichert: '{result}'")
+                else:
+                    astra_logger.info("🧠 Stille Extraktion übersprungen (kein strukturierter Fakt)")
+            except Exception as e:
+                astra_logger.warning(f"🧠 Stille Extraktion fehlgeschlagen: {e}")
+        
+        Thread(target=do_silent_extract, daemon=True).start()
+
+    # Muster für automatische Erkennung persönlicher Fakten
+    _PERSONAL_FACT_PATTERNS = [
+        r'\bich mag\b',                # "ich mag Eiscreme"
+        r'\bich liebe\b',              # "ich liebe Hunde"
+        r'\bich hasse\b',              # "ich hasse Spinnen"
+        r'\bich heiße\b',              # "ich heiße Duncan"
+        r'\bmein name ist\b',           # "mein Name ist Duncan"
+        r'\bich bin \d+',               # "ich bin 25 (Jahre alt)"
+        r'\bich wohne\b',              # "ich wohne in Berlin"
+        r'\bich arbeite\b',             # "ich arbeite als Programmierer"
+        r'\bich spiele\b',              # "ich spiele gerne Gitarre"
+        r'\bmeine lieblingsfarbe\b',    # "meine Lieblingsfarbe ist blau"
+        r'\bmein lieblings\w+\b',       # "mein Lieblingsspiel ist..."
+        r'\bich spreche\b',             # "ich spreche Deutsch"
+        r'\bich habe (?:einen?|eine)\b',  # "ich habe einen Hund"
+        r'\bich komme aus\b',           # "ich komme aus Deutschland"
+        r'\bich bin (?:ein|eine)\b',     # "ich bin ein Programmierer"
+    ]
+
+    def _detect_personal_fact(self, message: str) -> str | None:
+        """Erkennt persönliche Fakten in User-Nachrichten.
+        
+        Returns:
+            Den Nachrichtentext für Extraktion, oder None
+        """
+        import re as _re
+        lower = message.lower().strip()
+        
+        # Zu kurze Nachrichten ignorieren
+        if len(lower) < 8:
+            return None
+        
+        # Fragen ignorieren (kein Fakt)
+        if lower.rstrip().endswith('?'):
+            return None
+        
+        for pattern in self._PERSONAL_FACT_PATTERNS:
+            if _re.search(pattern, lower):
+                return message.strip()
+        
+        return None
+
     def send_message(self):
         """Sendet eine Nachricht an Astra"""
         if not self.current_chat:
@@ -757,8 +822,13 @@ class ChatWindow(QMainWindow):
         # das gibt bessere UX weil Benutzer kann tippen statt auf Antwort zu warten
         self.is_waiting_for_response = True
         
-        # 🚫 Auto-Learn DEAKTIVIERT - verursacht fehlerhafte Einträge wie "Name: 30"
-        # Memory wird NUR über explizite [MERKEN:...] Tags der KI gespeichert.
+        # 🧠 Auto-Erkennung persönlicher Fakten (stille Hintergrund-Speicherung)
+        # Erkennt "ich mag...", "ich bin...", "ich heiße..." etc. ohne explizites "merke"
+        if self._ollama_alive and self.settings_manager.get('memory_enabled', True):
+            fact_text = self._detect_personal_fact(message)
+            if fact_text:
+                astra_logger.info(f"🧠 Auto-Erkennung: '{fact_text}' aus '{message[:50]}'")
+                self._silent_memory_extraction(fact_text)
         
         # === ASYNCHRONE INTERNET SEARCH INTEGRATION ===
         search_enabled = self.settings_manager.get('search_enabled', True)
