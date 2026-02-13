@@ -634,8 +634,14 @@ class ChatWindow(QMainWindow):
             return
         
         # "Merke" Funktion — LLM-basierte Faktenextraktion via lokales Ollama
-        if message.lower().startswith("merke"):
-            memory_text = message[5:].strip()
+        # Erkennt "merke" auch nach Begrüßungen: "Hey Astra merke...", "Bitte merke..."
+        import re
+        merke_match = re.search(r'\bmerke\b', message.lower())
+        if merke_match:
+            # Alles nach "merke" ist der zu merkende Inhalt
+            memory_text = message[merke_match.end():].strip()
+            # Trailing "bitte" entfernen
+            memory_text = re.sub(r'\s+bitte\s*$', '', memory_text, flags=re.IGNORECASE).strip()
             # Natürliche Präfixe entfernen die keinen Inhalt tragen
             for prefix in ("dir dass ", "dir, dass ", "dir das ", "dir "):
                 if memory_text.lower().startswith(prefix):
