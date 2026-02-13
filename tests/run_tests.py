@@ -890,6 +890,118 @@ class TestMemoryExtended(unittest.TestCase):
 
 
 # ============================================================================
+# 12. HEALTH-CHECKER TESTS
+# ============================================================================
+class TestHealthChecker(unittest.TestCase):
+    """Tests für den modernisierten HealthChecker"""
+
+    def test_check_returns_bool(self):
+        """check() gibt True/False zurück"""
+        from modules.utils import HealthChecker
+        # Unterdrücke print-Ausgabe
+        import io
+        from contextlib import redirect_stdout
+        f = io.StringIO()
+        with redirect_stdout(f):
+            result = HealthChecker.check()
+        self.assertIsInstance(result, bool)
+
+    def test_run_all_checks_returns_list(self):
+        """run_all_checks() gibt Liste von Dicts zurück"""
+        from modules.utils import HealthChecker
+        results = HealthChecker.run_all_checks()
+        self.assertIsInstance(results, list)
+        self.assertGreater(len(results), 0)
+
+    def test_result_structure(self):
+        """Jedes Ergebnis hat category, name, level, message"""
+        from modules.utils import HealthChecker
+        results = HealthChecker.run_all_checks()
+        for r in results:
+            self.assertIn("category", r)
+            self.assertIn("name", r)
+            self.assertIn("level", r)
+            self.assertIn("message", r)
+            self.assertIn(r["level"], [
+                HealthChecker.OK, HealthChecker.WARN,
+                HealthChecker.FAIL, HealthChecker.INFO
+            ])
+
+    def test_import_checks_pass(self):
+        """Alle Modul-Imports sollten OK sein"""
+        from modules.utils import HealthChecker
+        results = HealthChecker._check_imports()
+        for r in results:
+            self.assertEqual(r["category"], "Module")
+            # Mindestens Database und Memory sollten importierbar sein
+            if r["name"] in ("Database", "Memory", "Logger"):
+                self.assertEqual(r["level"], HealthChecker.OK,
+                                 f"{r['name']} Import fehlgeschlagen: {r['message']}")
+
+    def test_filesystem_checks(self):
+        """Dateisystem-Checks geben plausible Ergebnisse"""
+        from modules.utils import HealthChecker
+        results = HealthChecker._check_filesystem()
+        self.assertGreater(len(results), 0)
+        # config.py muss existieren
+        config_check = [r for r in results if r["name"] == "config.py"]
+        self.assertEqual(len(config_check), 1)
+        self.assertEqual(config_check[0]["level"], HealthChecker.OK)
+
+    def test_config_checks(self):
+        """Config-Checks validieren Konfiguration"""
+        from modules.utils import HealthChecker
+        results = HealthChecker._check_config()
+        self.assertGreater(len(results), 0)
+        # OLLAMA_HOST sollte OK sein
+        host_check = [r for r in results if r["name"] == "OLLAMA_HOST"]
+        self.assertEqual(len(host_check), 1)
+        self.assertEqual(host_check[0]["level"], HealthChecker.OK)
+
+    def test_database_check(self):
+        """Datenbank-Check gibt plausibles Ergebnis"""
+        from modules.utils import HealthChecker
+        results = HealthChecker._check_database()
+        self.assertGreater(len(results), 0)
+        # Level muss OK, WARN oder INFO sein (INFO bei Erststart)
+        for r in results:
+            self.assertIn(r["level"], [
+                HealthChecker.OK, HealthChecker.INFO, HealthChecker.WARN
+            ])
+
+    def test_dependency_checks(self):
+        """Abhängigkeits-Checks erkennen installierte Pakete"""
+        from modules.utils import HealthChecker
+        results = HealthChecker._check_dependencies()
+        # PyQt6 sollte installiert sein
+        pyqt_check = [r for r in results if r["name"] == "PyQt6"]
+        self.assertEqual(len(pyqt_check), 1)
+        self.assertEqual(pyqt_check[0]["level"], HealthChecker.OK)
+
+    def test_gpu_check_no_crash(self):
+        """GPU-Check crasht nicht (egal ob GPU vorhanden)"""
+        from modules.utils import HealthChecker
+        results = HealthChecker._check_gpu()
+        self.assertGreater(len(results), 0)
+        # Darf OK oder INFO sein, aber kein FAIL
+        for r in results:
+            self.assertNotEqual(r["level"], HealthChecker.FAIL)
+
+    def test_print_results_verbose(self):
+        """_print_results() crasht nicht im verbose-Modus"""
+        from modules.utils import HealthChecker
+        import io
+        from contextlib import redirect_stdout
+        results = HealthChecker.run_all_checks()
+        f = io.StringIO()
+        with redirect_stdout(f):
+            HealthChecker._print_results(results, verbose=True)
+        output = f.getvalue()
+        self.assertIn("Ergebnis:", output)
+        self.assertIn("Status:", output)
+
+
+# ============================================================================
 # RUNNER
 # ============================================================================
 def run_tests():
@@ -917,6 +1029,7 @@ def run_tests():
         TestErrorResilience,
         TestDatabaseExtended,
         TestMemoryExtended,
+        TestHealthChecker,
     ]
 
     for cls in test_classes:

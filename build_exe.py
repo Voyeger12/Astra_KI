@@ -1,7 +1,8 @@
 """
 ASTRA AI - Build Script
 =======================
-Kompiliert die Anwendung zu einer EXE mit PyInstaller
+Kompiliert die Anwendung zu einer EXE mit PyInstaller.
+Enthält alle Module, Assets und Abhängigkeiten.
 """
 
 import os
@@ -15,7 +16,7 @@ def build_exe():
     """Baut die EXE mit PyInstaller"""
     
     print("=" * 60)
-    print("ASTRA AI - PyInstaller Build")
+    print("ASTRA AI - PyInstaller Build v2.1")
     print("=" * 60)
     
     # Prüfe PyInstaller
@@ -27,6 +28,22 @@ def build_exe():
         print("Installieren Sie: pip install pyinstaller")
         return False
     
+    # Health-Check vor Build
+    print("\n🩺 Führe Health-Check durch...")
+    try:
+        from modules.utils import HealthChecker
+        import io
+        from contextlib import redirect_stdout
+        f = io.StringIO()
+        with redirect_stdout(f):
+            health_ok = HealthChecker.check(verbose=False)
+        if not health_ok:
+            print("⚠️  Health-Check hat Warnungen — Build wird fortgesetzt")
+        else:
+            print("✅ Health-Check bestanden")
+    except Exception as e:
+        print(f"⚠️  Health-Check übersprungen: {e}")
+    
     # Verzeichnisse
     app_dir = Path(__file__).parent
     build_dir = app_dir / "build"
@@ -34,12 +51,29 @@ def build_exe():
     
     # Cleanup alte Builds
     print("\n🧹 Räume auf...")
-    for directory in [build_dir, dist_dir, app_dir / "ASTRA AI.spec"]:
-        if isinstance(directory, Path) and directory.exists():
-            if directory.is_dir():
-                shutil.rmtree(directory)
-            else:
-                directory.unlink()
+    for directory in [build_dir, dist_dir]:
+        if directory.exists() and directory.is_dir():
+            shutil.rmtree(directory)
+    spec_file = app_dir / "ASTRA AI.spec"
+    if spec_file.exists():
+        spec_file.unlink()
+    
+    # Data-Files sammeln (werden in EXE eingebettet)
+    data_files = []
+    data_mappings = [
+        ("persona.txt",              "."),
+        ("config.py",                "."),
+        ("assets",                   "assets"),
+        ("config/settings.json",     "config"),
+    ]
+    for src, dest in data_mappings:
+        src_path = app_dir / src
+        if src_path.exists():
+            sep = ";" if sys.platform == "win32" else ":"
+            data_files.append(f"--add-data={src_path}{sep}{dest}")
+            print(f"  📦 {src} → {dest}/")
+        else:
+            print(f"  ⚠️  {src} nicht gefunden (übersprungen)")
     
     # PyInstaller-Befehl
     print("\n🔨 Baue Anwendung...")
@@ -48,29 +82,65 @@ def build_exe():
         "--name=ASTRA AI",
         "--onefile",
         "-w",
-        "--icon=ASTRA.ico" if (app_dir / "ASTRA.ico").exists() else "",
         f"--distpath={dist_dir}",
         f"--workpath={build_dir}",
-        # PyQt6 Hidden Imports
+        
+        # ── Icon ──
+        *(["--icon=ASTRA.ico"] if (app_dir / "ASTRA.ico").exists() else []),
+        
+        # ── Data-Files ──
+        *data_files,
+        
+        # ── PyQt6 ──
         "--hidden-import=PyQt6.QtPrintSupport",
         "--hidden-import=PyQt6.QtSvg",
+        "--hidden-import=PyQt6.QtSvgWidgets",
         "--collect-all=PyQt6",
-        # Internet Search Dependencies
+        
+        # ── Code-Highlighting (Pygments) ──
+        "--hidden-import=pygments",
+        "--hidden-import=pygments.lexers",
+        "--hidden-import=pygments.formatters",
+        "--hidden-import=pygments.styles",
+        "--hidden-import=pygments.styles.monokai",
+        "--collect-submodules=pygments.lexers",
+        
+        # ── Internet-Suche ──
         "--hidden-import=ddgs",
         "--hidden-import=requests",
         "--collect-all=ddgs",
         "--collect-all=requests",
-        # Datenbank & Logging
+        
+        # ── Datenbank & System ──
         "--hidden-import=sqlite3",
         "--hidden-import=logging",
-        # Fallback für altes Paket (falls noch entfernt nicht werden kann)
+        "--hidden-import=json",
+        "--hidden-import=urllib.request",
+        
+        # ── ASTRA Module (explizit) ──
+        "--hidden-import=modules",
+        "--hidden-import=modules.database",
+        "--hidden-import=modules.memory",
+        "--hidden-import=modules.ollama_client",
+        "--hidden-import=modules.logger",
+        "--hidden-import=modules.utils",
+        "--hidden-import=modules.gpu_detect",
+        "--hidden-import=modules.ui",
+        "--hidden-import=modules.ui.main_window",
+        "--hidden-import=modules.ui.chat_display",
+        "--hidden-import=modules.ui.rich_formatter",
+        "--hidden-import=modules.ui.settings_dialog",
+        "--hidden-import=modules.ui.settings_manager",
+        "--hidden-import=modules.ui.styles",
+        "--hidden-import=modules.ui.colors",
+        "--hidden-import=modules.ui.workers",
+        
+        # ── Fallback für altes Such-Paket ──
         "--hidden-import=duckduckgo_search",
-        # Module
+        
+        # ── Einstiegspunkt ──
         str(app_dir / "main.py")
     ]
-    
-    # Entferne leere Strings
-    cmd = [arg for arg in cmd if arg]
     
     try:
         result = subprocess.run(cmd, cwd=app_dir, check=True)
@@ -78,12 +148,15 @@ def build_exe():
         exe_path = dist_dir / "ASTRA AI.exe"
         
         if exe_path.exists():
-            print(f"\n✅ Build erfolgreich!")
-            print(f"📦 EXE erstellt: {exe_path}")
-            print(f"📊 Größe: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
+            size_mb = exe_path.stat().st_size / 1024 / 1024
+            print(f"\n{'=' * 60}")
+            print(f"✅ Build erfolgreich!")
+            print(f"📦 EXE: {exe_path}")
+            print(f"📊 Größe: {size_mb:.1f} MB")
+            print(f"{'=' * 60}")
             return True
         else:
-            print("❌ Build fehlgeschlagen - EXE nicht gefunden")
+            print("❌ Build fehlgeschlagen — EXE nicht gefunden")
             return False
     
     except subprocess.CalledProcessError as e:

@@ -4,8 +4,7 @@ chcp 65001 >nul 2>&1
 cls
 
 REM =========================================================
-REM ASTRA AI - Windows Launcher
-REM v2.0
+REM ASTRA AI - Windows Launcher v2.1
 REM =========================================================
 
 echo.
@@ -17,19 +16,16 @@ echo   - MERKEN-Tag Memory System
 echo   - Rich Markdown und Code-Highlighting
 echo   - DuckDuckGo Internet-Suche
 echo   - Crash-Recovery und Backup-System
+echo   - GPU Auto-Erkennung (CUDA/Vulkan/ROCm)
 echo.
 
-REM ⚡ GPU-Erkennung wird automatisch in Python durchgefuehrt
-REM (CUDA fuer NVIDIA, Vulkan fuer AMD RDNA4/Intel, ROCm fuer AMD RDNA3)
-echo [INFO] GPU wird automatisch erkannt...
-
-REM Pruefe Python Installation
 REM Aktiviere venv falls vorhanden
 if exist "venv\Scripts\activate.bat" (
     echo [INFO] Aktiviere Virtual Environment...
     call venv\Scripts\activate.bat
 )
 
+REM Pruefe Python Installation
 python --version >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Python nicht gefunden!
@@ -51,33 +47,28 @@ if errorlevel 1 (
     )
 )
 
-REM Pruefe Ollama-Verbindung
+REM =========================================================
+REM HEALTH-CHECK (modernisiert)
+REM =========================================================
 echo.
-echo [INFO] Pruefe Ollama-Verbindung...
-python -c "from modules.ollama_client import OllamaClient; client = OllamaClient(); exit(0 if client.is_alive() else 1)" >nul 2>&1
+echo [INFO] Health-Check laeuft...
+echo ---------------------------------------------------------
+python -c "from modules.utils import HealthChecker; import sys; sys.exit(0 if HealthChecker.check(verbose=True) else 1)"
+set HC_RESULT=%errorlevel%
+echo ---------------------------------------------------------
 
-if errorlevel 1 (
-    echo [WARN] Ollama laeuft nicht auf http://localhost:11434
+if %HC_RESULT% NEQ 0 (
     echo.
-    echo Starten Sie Ollama mit einem neuen Terminal-Fenster:
-    echo   ollama serve
+    echo [ERROR] Health-Check fehlgeschlagen! Kritische Fehler gefunden.
+    echo         Bitte ueberpruefen Sie die Installation.
     echo.
-    echo Die Anwendung wird trotzdem gestartet.
-    echo.
-    pause
-)
-
-REM Health-Check Module
-echo.
-echo [INFO] Health-Check Module...
-python -c "from modules.utils import HealthChecker; exit(0 if HealthChecker.check() else 1)"
-
-if errorlevel 1 (
-    echo.
-    echo [ERROR] Module-Check fehlgeschlagen!
-    echo Bitte ueberpruefen Sie die Installation.
-    pause
-    exit /b 1
+    set /p FORCE_START="Trotzdem starten? (j/N): "
+    if /i "!FORCE_START!" NEQ "j" (
+        echo [ABBRUCH] Start abgebrochen.
+        pause
+        exit /b 1
+    )
+    echo [WARN] Start wird trotz Fehlern erzwungen...
 )
 
 REM Starte Anwendung
