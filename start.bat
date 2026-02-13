@@ -19,6 +19,10 @@ echo   - DuckDuckGo Internet-Suche
 echo   - Crash-Recovery und Backup-System
 echo.
 
+REM ⚡ GPU-Erkennung wird automatisch in Python durchgefuehrt
+REM (CUDA fuer NVIDIA, Vulkan fuer AMD RDNA4/Intel, ROCm fuer AMD RDNA3)
+echo [INFO] GPU wird automatisch erkannt...
+
 REM Pruefe Python Installation
 REM Aktiviere venv falls vorhanden
 if exist "venv\Scripts\activate.bat" (

@@ -52,15 +52,27 @@ class LLMStreamWorker(QThread):
 class HealthWorker(QThread):
     """Background thread to periodically check Ollama health without blocking UI."""
     alive = pyqtSignal(bool)
+    model_loaded = pyqtSignal(bool)  # Signal wenn Model vorgeladen wurde
 
-    def __init__(self, ollama: OllamaClient, interval: float = 2.0):
+    def __init__(self, ollama: OllamaClient, interval: float = 2.0, preload_model: str = None):
         super().__init__()
         self.ollama = ollama
         self.interval = interval
         self._stopped = False
+        self._preload_model = preload_model
+        self._preloaded = False
 
     def run(self):
         import time
+        # ⚡ Beim ersten Start: Modell vorab in VRAM laden
+        if self._preload_model and not self._preloaded:
+            try:
+                ok = self.ollama.preload_model(self._preload_model)
+                self._preloaded = True
+                self.model_loaded.emit(ok)
+            except Exception:
+                self.model_loaded.emit(False)
+        
         while not self._stopped:
             try:
                 ok = self.ollama.is_alive()
