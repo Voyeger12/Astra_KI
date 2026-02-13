@@ -36,7 +36,8 @@ class MemoryManager:
         self._cached_system_prompt = None
         self._last_prompt_time = None
         
-        result = self.db.add_memory(information, category)
+        # 🔄 Update statt Duplikat: "Alter: 25" überschreibt "Alter: 30"
+        result = self.db.update_or_add_memory(information, category)
         
         # Memory-Limit enforcing: Älteste Einträge auto-löschen
         if result:

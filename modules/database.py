@@ -413,6 +413,44 @@ class Database:
         except Exception as e:
             astra_logger.error(f"Fehler beim Speichern des Memory: {e}")
             return False
+
+    def update_or_add_memory(self, content: str, category: str = "general") -> bool:
+        """Aktualisiert bestehenden Memory-Eintrag wenn gleiche Kategorie-Prefix existiert.
+        
+        z.B. 'Alter: 25' überschreibt vorhandenes 'Alter: 30'.
+        Wenn kein ':' im Content oder kein bestehender Eintrag → neuer Eintrag.
+        """
+        try:
+            if ":" in content:
+                prefix = content.split(":")[0].strip().lower()
+                
+                with self._db_lock:
+                    conn = self._get_connection()
+                    cursor = conn.cursor()
+                    
+                    # Suche bestehenden Eintrag mit gleichem Kategorie-Prefix
+                    cursor.execute(
+                        "SELECT id, content FROM memory WHERE LOWER(TRIM(content)) LIKE ? ORDER BY id DESC LIMIT 1",
+                        (f"{prefix}:%",)
+                    )
+                    existing = cursor.fetchone()
+                    
+                    if existing:
+                        old_id, old_content = existing
+                        now = datetime.now().isoformat()
+                        cursor.execute(
+                            "UPDATE memory SET content = ?, created_at = ?, category = ? WHERE id = ?",
+                            (content, now, category, old_id)
+                        )
+                        conn.commit()
+                        astra_logger.info(f"🔄 Memory aktualisiert: '{old_content}' → '{content}'")
+                        return True
+            
+            # Kein Prefix-Match oder kein Doppelpunkt → neuer Eintrag
+            return self.add_memory(content, category)
+        except Exception as e:
+            astra_logger.error(f"Fehler bei update_or_add_memory: {e}")
+            return self.add_memory(content, category)
     
     def get_memory(self) -> str:
         """Lädt alle Memory-Einträge als formatierter String"""

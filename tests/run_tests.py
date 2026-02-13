@@ -958,6 +958,42 @@ class TestMemoryExtended(unittest.TestCase):
         count = memory.lower().count("kaffee")
         self.assertEqual(count, 1)
 
+    def test_update_or_add_memory_updates_existing(self):
+        """update_or_add_memory() überschreibt Eintrag mit gleichem Kategorie-Prefix"""
+        self.db.add_memory("Alter: 30", "personal")
+        entries_before = self.db.get_memory_entries()
+        self.assertEqual(len(entries_before), 1)
+        self.assertEqual(entries_before[0]["content"], "Alter: 30")
+        
+        # Jetzt Update: Alter: 25 soll Alter: 30 überschreiben
+        self.db.update_or_add_memory("Alter: 25", "personal")
+        entries_after = self.db.get_memory_entries()
+        self.assertEqual(len(entries_after), 1)  # Immer noch nur 1 Eintrag!
+        self.assertEqual(entries_after[0]["content"], "Alter: 25")
+
+    def test_update_or_add_memory_adds_new_category(self):
+        """update_or_add_memory() fügt neuen Eintrag hinzu wenn Kategorie nicht existiert"""
+        self.db.add_memory("Name: Duncan", "personal")
+        self.db.update_or_add_memory("Alter: 25", "personal")
+        entries = self.db.get_memory_entries()
+        self.assertEqual(len(entries), 2)
+
+    def test_update_or_add_memory_no_colon(self):
+        """update_or_add_memory() ohne Doppelpunkt fügt neuem Eintrag hinzu"""
+        self.db.update_or_add_memory("Irgendein Freitext", "general")
+        entries = self.db.get_memory_entries()
+        self.assertEqual(len(entries), 1)
+
+    def test_learn_uses_update_dedup(self):
+        """learn() überschreibt bestehende Kategorie statt Duplikat"""
+        self.mm.learn("Name: Max", "personal")
+        self.mm.learn("Name: Duncan", "personal")
+        entries = self.mm.get_memory_entries()
+        # Nur 1 Name-Eintrag, der neueste gewinnt
+        name_entries = [e for e in entries if e["content"].startswith("Name:")]
+        self.assertEqual(len(name_entries), 1)
+        self.assertEqual(name_entries[0]["content"], "Name: Duncan")
+
 
 # ============================================================================
 # 12. HEALTH-CHECKER TESTS

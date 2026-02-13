@@ -1052,8 +1052,10 @@ class ChatWindow(QMainWindow):
                         for i, memory_text in enumerate(memory_texts, 1):
                             if memory_text and len(memory_text) > 2:
                                 try:
-                                    self.memory_manager.learn(memory_text)
-                                    astra_logger.info(f"✅ Memory saved: '{memory_text[:60]}'")
+                                    # 🧠 [MERKEN:]-Tags durch LLM-Extraktion leiten
+                                    extracted = self.ollama.extract_fact(memory_text, self._selected_model)
+                                    self.memory_manager.learn(extracted, "personal")
+                                    astra_logger.info(f"✅ Memory saved: '{extracted[:60]}' (from tag: '{memory_text[:60]}')")
                                 except Exception as e:
                                     astra_logger.error(f"Memory save error: {e}")
                     
