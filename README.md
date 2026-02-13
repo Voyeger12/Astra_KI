@@ -68,7 +68,6 @@ python main.py
 start.bat
 ```
 
-> **Hinweis:** Ollama muss im Hintergrund laufen (`ollama serve` oder Ollama Desktop-App). ASTRA erkennt automatisch deine GPU und konfiguriert Ollama für maximale Performance.
 
 ---
 
