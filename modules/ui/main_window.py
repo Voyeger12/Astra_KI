@@ -629,7 +629,7 @@ class ChatWindow(QMainWindow):
         """Startet LLM-basierte Faktenextraktion im Hintergrund.
         
         Nutzt das lokale Ollama-Modell um natürliche Sprache in
-        strukturierte Fakten (z.B. 'Name: Duncan') umzuwandeln.
+        strukturierte Fakten (z.B. 'Name: Alex') umzuwandeln.
         Unterstützt Multi-Fakt-Nachrichten (Split an 'und').
         """
         def do_extract(text=raw_text, model=self._selected_model):
@@ -712,8 +712,8 @@ class ChatWindow(QMainWindow):
     def _split_multi_facts(text: str) -> list:
         """Splittet Multi-Fakt-Nachrichten in einzelne Fakten.
         
-        'Ich heiße Duncan und bin 30 und komme aus Essen'
-        → ['ich heiße Duncan', 'ich bin 30', 'ich komme aus Essen']
+        'Ich heiße Alex und bin 25 und komme aus Hamburg'
+        → ['ich heiße Alex', 'ich bin 25', 'ich komme aus Hamburg']
         
         Fügt 'ich' hinzu wenn ein Segment damit nicht beginnt.
         """
@@ -771,10 +771,10 @@ class ChatWindow(QMainWindow):
         r'\bich mag\b',                # "ich mag Eiscreme"
         r'\bich liebe\b',              # "ich liebe Hunde"
         r'\bich hasse\b',              # "ich hasse Spinnen"
-        r'\bich heiße\b',              # "ich heiße Duncan"
-        r'\bmein name ist\b',           # "mein Name ist Duncan"
+        r'\bich heiße\b',              # "ich heiße Alex"
+        r'\bmein name ist\b',           # "mein Name ist Alex"
         r'\bich bin \d+',               # "ich bin 25 (Jahre alt)"
-        r'\bich wohne\b',              # "ich wohne in Berlin"
+        r'\bich wohne\b',              # "ich wohne in Hamburg"
         r'\bich arbeite\b',             # "ich arbeite als Programmierer"
         r'\bich spiele\b',              # "ich spiele gerne Gitarre"
         r'\bmeine lieblingsfarbe\b',    # "meine Lieblingsfarbe ist blau"

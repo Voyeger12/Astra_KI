@@ -72,11 +72,11 @@ class OllamaClient:
         wie Name, Alter, Wohnort etc. aus Freitext zu extrahieren.
         
         Args:
-            text: Der zu analysierende Text (z.B. "ich heiße Duncan")
+            text: Der zu analysierende Text (z.B. "ich heiße Alex")
             model: Das zu verwendende Modell
         
         Returns:
-            Strukturierter Fakt (z.B. "Name: Duncan") oder Originaltext als Fallback
+            Strukturierter Fakt (z.B. "Name: Alex") oder Originaltext als Fallback
         """
         # Erlaubte Kategorien für strikte Validierung
         VALID_CATEGORIES = {
@@ -99,16 +99,16 @@ class OllamaClient:
             "- 'ich bin X' (kein Alter) → Rolle: X\n"
             "- Alles andere → Fakt: (kurze Zusammenfassung)\n\n"
             "WICHTIG: Der Wert muss das ORIGINAL-Wort sein, kein Satz!\n\n"
-            "Eingabe: ich heiße Duncan\n"
-            "Ausgabe: Name: Duncan\n\n"
+            "Eingabe: ich heiße Alex\n"
+            "Ausgabe: Name: Alex\n\n"
             "Eingabe: ich bin 25 Jahre alt\n"
             "Ausgabe: Alter: 25\n\n"
             "Eingabe: ich mag Pizza\n"
             "Ausgabe: Mag: Pizza\n\n"
             "Eingabe: ich mag Eiscreme\n"
             "Ausgabe: Mag: Eiscreme\n\n"
-            "Eingabe: ich Duncan heiße\n"
-            "Ausgabe: Name: Duncan\n\n"
+            "Eingabe: ich Alex heiße\n"
+            "Ausgabe: Name: Alex\n\n"
             "Eingabe: ich 25 Jahre alt bin\n"
             "Ausgabe: Alter: 25\n\n"
             f"Eingabe: {text}\n"

@@ -50,8 +50,8 @@ Wenn der Benutzer dir etwas Wichtiges über sich mitteilt, MUSST du es speichern
 **FORMAT:** [MERKEN: vollständige Information]
 
 **RICHTIGE BEISPIELE:**
-- "Ich bin 30 Jahre alt" → [MERKEN: Benutzer ist 30 Jahre alt]
-- "Ich heiße Max" → [MERKEN: Benutzer heißt Max]
+- "Ich bin 25 Jahre alt" → [MERKEN: Benutzer ist 25 Jahre alt]
+- "Ich heiße Alex" → [MERKEN: Benutzer heißt Alex]
 - "Ich arbeite als Programmierer" → [MERKEN: Benutzer arbeitet als Programmierer]
 - "Ich mag Kaffee" → [MERKEN: Benutzer mag Kaffee]
 

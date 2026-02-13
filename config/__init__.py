@@ -116,7 +116,7 @@ Wenn Suchergebnisse vorhanden sind ([INTERNET SEARCH RESULTS: ...]), nutze sie. 
 
 ### GEDÄCHTNIS
 Speichere wichtige Benutzer-Infos mit [MERKEN: Info]. Ein Tag = eine konkrete Info.
-Beispiele: [MERKEN: Benutzer heißt Duncan], [MERKEN: Duncan arbeitet als Programmierer]
+Beispiele: [MERKEN: Benutzer heißt Alex], [MERKEN: Alex arbeitet als Programmierer]
 Nicht speichern: vage Infos, Danke, falsche Zuordnungen.
 [MERKEN:...] Tags sind intern – nicht im Chat zeigen!
 
