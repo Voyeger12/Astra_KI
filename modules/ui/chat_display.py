@@ -79,17 +79,18 @@ class BubbleWidget(QFrame):
         self._apply_style()
 
     def _show_context_menu(self, pos):
-        """Zeigt natives Windows-Kontextmenü mit Kopieren-Aktion"""
+        """Zeigt Kontextmenü mit Kopieren-Aktion"""
         selected = self.label.selectedText()
         if not selected:
             return
         
         from PyQt6.QtWidgets import QMenu
         menu = QMenu(self)
-        # Natives Look: Kein eigenes Styling — Qt nutzt Windows-Standard
-        menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.FramelessWindowHint)
-        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        menu.setStyleSheet("")  # Globales Stylesheet überschreiben → natives Menü
+        menu.setStyleSheet(
+            "QMenu { background-color: #2a2a2a; border: 1px solid #555; padding: 4px; }"
+            "QMenu::item { background-color: #2a2a2a; color: #e8e8e8; padding: 6px 28px; }"
+            "QMenu::item:selected { background-color: #ff4b4b; color: white; }"
+        )
         
         copy_action = menu.addAction("Kopieren")
         copy_action.triggered.connect(lambda: QApplication.clipboard().setText(selected))

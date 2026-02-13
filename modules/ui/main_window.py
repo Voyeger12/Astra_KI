@@ -23,6 +23,13 @@ class MultiLineInput(QTextEdit):
     """
     send_requested = pyqtSignal()
 
+    # Inline-Styling für Kontextmenü (muss globales App-Stylesheet überschreiben)
+    _MENU_STYLE = (
+        "QMenu { background-color: #2a2a2a; border: 1px solid #555; padding: 4px; }"
+        "QMenu::item { background-color: #2a2a2a; color: #e8e8e8; padding: 6px 28px; }"
+        "QMenu::item:selected { background-color: #ff4b4b; color: white; }"
+    )
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptRichText(False)
@@ -32,6 +39,13 @@ class MultiLineInput(QTextEdit):
         self.setMinimumHeight(self._min_height)
         self.setMaximumHeight(self._min_height)
         self.document().contentsChanged.connect(self._auto_resize)
+
+    def contextMenuEvent(self, event):
+        """Eigenes Kontextmenü mit explizitem Styling (globales Stylesheet überschreiben)"""
+        menu = self.createStandardContextMenu()
+        menu.setStyleSheet(self._MENU_STYLE)
+        menu.exec(event.globalPos())
+        menu.deleteLater()
 
     def keyPressEvent(self, event):
         """Enter sendet, Shift+Enter fügt Zeilenumbruch ein."""
