@@ -65,7 +65,7 @@ class OllamaClient:
         except Exception:
             return False
     
-    def chat_stream(self, model: str, messages: List[Dict[str, str]], temperature: float = 0.7, callback=None):
+    def chat_stream(self, model: str, messages: List[Dict[str, str]], temperature: float = 0.7, callback=None, cancel_check=None):
         """
         Sendet eine Chat-Anfrage mit STREAMING (Text wird in Echtzeit empfangen)
         
@@ -74,6 +74,7 @@ class OllamaClient:
             messages: Chat-Nachrichtenhistorie
             temperature: Kreativitätsgrad
             callback: Funktion die für jeden Text-Chunk aufgerufen wird: callback(chunk_text)
+            cancel_check: Optionale Funktion die True zurückgibt wenn abgebrochen werden soll
         
         Yields:
             Einzelne Text-Chunks wie sie vom LLM kommen
@@ -121,23 +122,32 @@ class OllamaClient:
                     full_response = ""
                     chunk_count = 0
                     
-                    for line in response.iter_lines(decode_unicode=True):
-                        if line:
-                            try:
-                                chunk = json.loads(line)
-                                text = chunk.get("message", {}).get("content", "")
-                                if text:
-                                    full_response += text
-                                    chunk_count += 1
-                                    if callback:
-                                        callback(text)
-                                    yield text
-                            except json.JSONDecodeError:
-                                continue
+                    try:
+                        for line in response.iter_lines(decode_unicode=True):
+                            # ✅ Cancellation-Check
+                            if cancel_check and cancel_check():
+                                astra_logger.info("⛔ Stream abgebrochen (cancel_check)")
+                                return
+                            
+                            if line:
+                                try:
+                                    chunk = json.loads(line)
+                                    text = chunk.get("message", {}).get("content", "")
+                                    if text:
+                                        full_response += text
+                                        chunk_count += 1
+                                        if callback:
+                                            callback(text)
+                                        yield text
+                                except json.JSONDecodeError:
+                                    continue
+                    finally:
+                        response.close()  # ✅ HTTP-Stream IMMER schließen (auch bei cancel/return)
                     
                     astra_logger.info(f"Stream fertig: {len(full_response)} Zeichen, {chunk_count} Chunks")
                     return
                 else:
+                    response.close()  # ✅ Auch bei Fehler schließen
                     astra_logger.error(f"HTTP {response.status_code}")
                     if attempt < self.max_retries:
                         time.sleep(retry_delay)

@@ -15,11 +15,18 @@ from .logger import astra_logger
 
 
 class Database:
-    """SQLite-Datenbank für Chats und Memory - mit persistenter Connection"""
+    """SQLite-Datenbank für Chats und Memory - mit persistenter Connection
+    
+    Thread-Safety:
+    - _db_lock schützt ALLE Lese- und Schreib-Operationen auf der Connection
+    - Background-Writer serialisiert save_message() Aufrufe via Queue
+    - Alle anderen Writes (Memory, Chat-CRUD) sind ebenfalls gelockt
+    """
     
     def __init__(self, db_path: Path = DB_PATH):
         self.db_path = db_path
         self._conn_lock = threading.Lock()
+        self._db_lock = threading.RLock()  # Schützt ALLE DB-Operationen (reentrant)
         self._conn: Optional[sqlite3.Connection] = None
         self.init_db()
         self._secure_database()
@@ -30,14 +37,14 @@ class Database:
         self._writer_thread.start()
     
     def _get_connection(self) -> sqlite3.Connection:
-        """Gibt persistente Read-Connection zurück (thread-safe)"""
+        """Gibt persistente Connection zurück (thread-safe)"""
         with self._conn_lock:
             if self._conn is None:
                 self._conn = sqlite3.connect(
-                    self.db_path, timeout=5, check_same_thread=False
+                    self.db_path, timeout=10, check_same_thread=False
                 )
                 self._conn.execute('PRAGMA journal_mode=WAL;')
-                self._conn.execute('PRAGMA busy_timeout=1000;')
+                self._conn.execute('PRAGMA busy_timeout=3000;')
                 self._conn.execute('PRAGMA synchronous=NORMAL;')
                 self._conn.execute('PRAGMA cache_size=10000;')
                 self._conn.execute('PRAGMA temp_store=MEMORY;')
@@ -133,15 +140,16 @@ class Database:
     def create_chat(self, name: str) -> Optional[int]:
         """Erstellt einen neuen Chat"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            now = datetime.now().isoformat()
-            cursor.execute(
-                "INSERT INTO chats (name, created_at, updated_at) VALUES (?, ?, ?)",
-                (name, now, now)
-            )
-            conn.commit()
-            return cursor.lastrowid
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                cursor.execute(
+                    "INSERT INTO chats (name, created_at, updated_at) VALUES (?, ?, ?)",
+                    (name, now, now)
+                )
+                conn.commit()
+                return cursor.lastrowid
         except sqlite3.IntegrityError:
             return None
         except sqlite3.OperationalError:
@@ -150,35 +158,37 @@ class Database:
     def get_chat_id(self, name: str) -> Optional[int]:
         """Holt die ID eines Chats"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT id FROM chats WHERE name = ?", (name,))
-            result = cursor.fetchone()
-            return result[0] if result else None
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM chats WHERE name = ?", (name,))
+                result = cursor.fetchone()
+                return result[0] if result else None
         except Exception:
             return None
     
     def get_all_chats(self) -> Dict[str, List[Dict]]:
         """Lädt alle Chats mit ihren Messages"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            
-            chats = {}
-            cursor.execute("SELECT id, name FROM chats ORDER BY id ASC")
-            chat_rows = cursor.fetchall()
-            
-            for chat_id, chat_name in chat_rows:
-                cursor.execute(
-                    "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id ASC",
-                    (chat_id,)
-                )
-                chats[chat_name] = [
-                    {"role": role, "content": content}
-                    for role, content in cursor.fetchall()
-                ]
-            
-            return chats
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                chats = {}
+                cursor.execute("SELECT id, name FROM chats ORDER BY id ASC")
+                chat_rows = cursor.fetchall()
+                
+                for chat_id, chat_name in chat_rows:
+                    cursor.execute(
+                        "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id ASC",
+                        (chat_id,)
+                    )
+                    chats[chat_name] = [
+                        {"role": role, "content": content}
+                        for role, content in cursor.fetchall()
+                    ]
+                
+                return chats
         except Exception as e:
             astra_logger.error(f"Fehler beim Laden der Chats: {e}")
             return {}
@@ -186,22 +196,23 @@ class Database:
     def get_chat_messages(self, chat_name: str) -> List[Dict]:
         """Lädt die Messages eines einzelnen Chats"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT id FROM chats WHERE name = ?", (chat_name,))
-            result = cursor.fetchone()
-            if not result:
-                return []
-            
-            cursor.execute(
-                "SELECT role, content, timestamp FROM messages WHERE chat_id = ? ORDER BY id ASC",
-                (result[0],)
-            )
-            return [
-                {"role": role, "content": content, "timestamp": timestamp}
-                for role, content, timestamp in cursor.fetchall()
-            ]
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                
+                cursor.execute("SELECT id FROM chats WHERE name = ?", (chat_name,))
+                result = cursor.fetchone()
+                if not result:
+                    return []
+                
+                cursor.execute(
+                    "SELECT role, content, timestamp FROM messages WHERE chat_id = ? ORDER BY id ASC",
+                    (result[0],)
+                )
+                return [
+                    {"role": role, "content": content, "timestamp": timestamp}
+                    for role, content, timestamp in cursor.fetchall()
+                ]
         except Exception as e:
             astra_logger.error(f"Fehler beim Laden der Chat-Messages: {e}")
             return []
@@ -209,10 +220,11 @@ class Database:
     def get_all_chat_names(self) -> List[str]:
         """Lädt nur die Chat-Namen"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM chats ORDER BY id ASC")
-            return [row[0] for row in cursor.fetchall()]
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM chats ORDER BY id ASC")
+                return [row[0] for row in cursor.fetchall()]
         except Exception as e:
             astra_logger.error(f"Fehler beim Laden der Chat-Namen: {e}")
             return []
@@ -241,51 +253,79 @@ class Database:
 
     def _write_message_sync(self, chat_name: str, role: str, content: str) -> bool:
         """Synchroner Schreib-Pfad, verwendet vom Hintergrund-Worker.
-        Nutzt die persistente Connection statt eigene zu erstellen."""
+        Gelockt via _db_lock für Thread-Safety."""
         try:
-            chat_id = self.get_chat_id(chat_name)
-            if not chat_id:
-                chat_id = self.create_chat(chat_name)
+            with self._db_lock:
+                chat_id = self._get_chat_id_unlocked(chat_name)
+                if not chat_id:
+                    chat_id = self._create_chat_unlocked(chat_name)
 
-            for attempt in range(3):
-                try:
-                    conn = self._get_connection()
-                    cursor = conn.cursor()
-                    now = datetime.now().isoformat()
-                    cursor.execute(
-                        "INSERT INTO messages (chat_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
-                        (chat_id, role, content, now)
-                    )
-                    cursor.execute(
-                        "UPDATE chats SET updated_at = ? WHERE id = ?",
-                        (now, chat_id)
-                    )
-                    conn.commit()
-                    return True
-                except sqlite3.OperationalError as oe:
-                    if 'locked' in str(oe).lower() and attempt < 2:
-                        time.sleep(0.05 * (attempt + 1))
-                        continue
-                    astra_logger.error(f"DB write error: {oe}")
+                if not chat_id:
+                    astra_logger.error(f"Konnte Chat-ID für '{chat_name}' nicht erstellen")
                     return False
+
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                cursor.execute(
+                    "INSERT INTO messages (chat_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+                    (chat_id, role, content, now)
+                )
+                cursor.execute(
+                    "UPDATE chats SET updated_at = ? WHERE id = ?",
+                    (now, chat_id)
+                )
+                conn.commit()
+                return True
         except Exception as e:
             astra_logger.error(f"Fehler beim synchronen Speichern der Nachricht: {e}")
             return False
+    
+    def _get_chat_id_unlocked(self, name: str) -> Optional[int]:
+        """Interne Methode — Aufrufer MUSS _db_lock halten!"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM chats WHERE name = ?", (name,))
+        result = cursor.fetchone()
+        return result[0] if result else None
+    
+    def _create_chat_unlocked(self, name: str) -> Optional[int]:
+        """Interne Methode — Aufrufer MUSS _db_lock halten!"""
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            now = datetime.now().isoformat()
+            cursor.execute(
+                "INSERT INTO chats (name, created_at, updated_at) VALUES (?, ?, ?)",
+                (name, now, now)
+            )
+            conn.commit()
+            return cursor.lastrowid
+        except sqlite3.IntegrityError:
+            # Chat existiert → ID holen
+            return self._get_chat_id_unlocked(name)
+        except Exception:
+            return None
 
     def _writer_loop(self) -> None:
         """Hintergrund-Thread, der Schreibaufträge seriell abarbeitet."""
-        while not self._stop_event.is_set():
+        while True:
             try:
                 job = self._write_queue.get(timeout=0.5)
             except queue.Empty:
+                if self._stop_event.is_set():
+                    break  # Nur beenden wenn Queue leer UND stop gesetzt
                 continue
 
             if job is None:
-                break
+                self._write_queue.task_done()
+                break  # Sentinel → sauber beenden
 
             try:
                 chat_name, role, content = job
                 self._write_message_sync(chat_name, role, content)
+            except Exception as e:
+                astra_logger.error(f"Writer-Loop Fehler: {e}")
             finally:
                 try:
                     self._write_queue.task_done()
@@ -293,11 +333,18 @@ class Database:
                     pass
 
     def close(self) -> None:
-        """Sauberes Herunterfahren."""
+        """Sauberes Herunterfahren — Queue wird erst komplett abgearbeitet."""
         try:
-            self._stop_event.set()
+            # 1. Sentinel in Queue → Writer verarbeitet alles davor
             self._write_queue.put(None)
-            self._writer_thread.join(timeout=2.0)
+            # 2. Warte bis Queue leer ist (max 5s)
+            try:
+                self._write_queue.join()
+            except Exception:
+                pass
+            # 3. Jetzt erst stop signalisieren
+            self._stop_event.set()
+            self._writer_thread.join(timeout=3.0)
         except Exception:
             pass
         # Persistente Connection schließen
@@ -313,17 +360,17 @@ class Database:
         """Löscht einen Chat mit allen Messages (mit Backup)"""
         try:
             self._backup_database()
-            
-            chat_id = self.get_chat_id(chat_name)
-            if not chat_id:
-                return False
-            
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            # Messages werden via ON DELETE CASCADE automatisch gelöscht
-            cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
-            conn.commit()
-            return True
+            with self._db_lock:
+                chat_id = self._get_chat_id_unlocked(chat_name)
+                if not chat_id:
+                    return False
+                
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                # Messages werden via ON DELETE CASCADE automatisch gelöscht
+                cursor.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+                conn.commit()
+                return True
         except Exception as e:
             astra_logger.error(f"Fehler beim Löschen des Chats: {e}")
             return False
@@ -331,15 +378,16 @@ class Database:
     def rename_chat(self, old_name: str, new_name: str) -> bool:
         """Benennt einen Chat um"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            now = datetime.now().isoformat()
-            cursor.execute(
-                "UPDATE chats SET name = ?, updated_at = ? WHERE name = ?",
-                (new_name, now, old_name)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                cursor.execute(
+                    "UPDATE chats SET name = ?, updated_at = ? WHERE name = ?",
+                    (new_name, now, old_name)
+                )
+                conn.commit()
+                return cursor.rowcount > 0
         except sqlite3.IntegrityError:
             return False
         except Exception:
@@ -352,15 +400,16 @@ class Database:
     def add_memory(self, content: str, category: str = "general") -> bool:
         """Fügt einen Memory-Eintrag hinzu"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            now = datetime.now().isoformat()
-            cursor.execute(
-                "INSERT INTO memory (content, created_at, category) VALUES (?, ?, ?)",
-                (content, now, category)
-            )
-            conn.commit()
-            return True
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                cursor.execute(
+                    "INSERT INTO memory (content, created_at, category) VALUES (?, ?, ?)",
+                    (content, now, category)
+                )
+                conn.commit()
+                return True
         except Exception as e:
             astra_logger.error(f"Fehler beim Speichern des Memory: {e}")
             return False
@@ -368,15 +417,16 @@ class Database:
     def get_memory(self) -> str:
         """Lädt alle Memory-Einträge als formatierter String"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT content, created_at FROM memory ORDER BY id ASC")
-            rows = cursor.fetchall()
-            
-            if not rows:
-                return "Noch keine Gedächtnisfragmente vorhanden."
-            
-            return "\n".join(f"[{ts}] {content}" for content, ts in rows)
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT content, created_at FROM memory ORDER BY id ASC")
+                rows = cursor.fetchall()
+                
+                if not rows:
+                    return "Noch keine Gedächtnisfragmente vorhanden."
+                
+                return "\n".join(f"[{ts}] {content}" for content, ts in rows)
         except Exception as e:
             return f"Fehler beim Laden des Memory: {e}"
     
@@ -384,23 +434,25 @@ class Database:
         """Löscht alle Memory-Einträge (mit automatischer Sicherung)"""
         try:
             self._backup_database()
-            conn = self._get_connection()
-            conn.execute("DELETE FROM memory")
-            conn.commit()
-            return True
+            with self._db_lock:
+                conn = self._get_connection()
+                conn.execute("DELETE FROM memory")
+                conn.commit()
+                return True
         except Exception:
             return False
     
     def get_memory_entries(self) -> List[Dict]:
         """Gibt alle Memory-Einträge als strukturierte Daten zurück"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, content, category, created_at FROM memory ORDER BY id ASC")
-            return [
-                {"id": r[0], "content": r[1], "category": r[2], "created_at": r[3]}
-                for r in cursor.fetchall()
-            ]
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, content, category, created_at FROM memory ORDER BY id ASC")
+                return [
+                    {"id": r[0], "content": r[1], "category": r[2], "created_at": r[3]}
+                    for r in cursor.fetchall()
+                ]
         except Exception as e:
             astra_logger.error(f"Fehler beim Laden der Memory-Einträge: {e}")
             return []
@@ -408,11 +460,12 @@ class Database:
     def delete_memory_by_id(self, memory_id: int) -> bool:
         """Löscht einen einzelnen Memory-Eintrag nach ID"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM memory WHERE id = ?", (memory_id,))
-            conn.commit()
-            return cursor.rowcount > 0
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM memory WHERE id = ?", (memory_id,))
+                conn.commit()
+                return cursor.rowcount > 0
         except Exception as e:
             astra_logger.error(f"Fehler beim Löschen des Memory-Eintrags: {e}")
             return False
@@ -420,31 +473,34 @@ class Database:
     def get_memory_count(self) -> int:
         """Gibt die Anzahl der Memory-Einträge zurück"""
         try:
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM memory")
-            return cursor.fetchone()[0]
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM memory")
+                return cursor.fetchone()[0]
         except Exception:
             return 0
     
     def trim_old_memory(self, max_entries: int) -> int:
         """Entfernt älteste Memory-Einträge wenn Limit überschritten"""
         try:
-            count = self.get_memory_count()
-            if count <= max_entries:
-                return 0
-            
-            to_delete = count - max_entries
-            conn = self._get_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM memory WHERE id IN (SELECT id FROM memory ORDER BY id ASC LIMIT ?)",
-                (to_delete,)
-            )
-            conn.commit()
-            deleted = cursor.rowcount
-            astra_logger.info(f"🧹 {deleted} alte Memory-Einträge entfernt (Limit: {max_entries})")
-            return deleted
+            with self._db_lock:
+                conn = self._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM memory")
+                count = cursor.fetchone()[0]
+                if count <= max_entries:
+                    return 0
+                
+                to_delete = count - max_entries
+                cursor.execute(
+                    "DELETE FROM memory WHERE id IN (SELECT id FROM memory ORDER BY id ASC LIMIT ?)",
+                    (to_delete,)
+                )
+                conn.commit()
+                deleted = cursor.rowcount
+                astra_logger.info(f"🧹 {deleted} alte Memory-Einträge entfernt (Limit: {max_entries})")
+                return deleted
         except Exception as e:
             astra_logger.error(f"Fehler beim Trimmen alter Memory-Einträge: {e}")
             return 0

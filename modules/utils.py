@@ -6,41 +6,44 @@ Verschiedene Hilfsfunktionen + Security Utils
 
 import re
 import time
+import threading
 from typing import List, Dict
 from html import escape as html_escape
 from collections import defaultdict
 
 
 class RateLimiter:
-    """Rate-Limiting gegen Abuse"""
+    """Rate-Limiting gegen Abuse (thread-safe)"""
     
     def __init__(self, max_requests: int = 30, window_seconds: int = 60):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests = defaultdict(list)
+        self._lock = threading.Lock()  # ✅ Thread-Safety
     
     def is_allowed(self, user_id: str = "default") -> bool:
         """Prüft ob Request erlaubt ist"""
         now = time.time()
-        
-        # Alte Requests entfernen
-        cutoff = now - self.window_seconds
-        self.requests[user_id] = [t for t in self.requests[user_id] if t > cutoff]
-        
-        # Prüfe Limit
-        if len(self.requests[user_id]) >= self.max_requests:
-            return False
-        
-        # Registriere neuen Request
-        self.requests[user_id].append(now)
-        return True
+        with self._lock:
+            # Alte Requests entfernen
+            cutoff = now - self.window_seconds
+            self.requests[user_id] = [t for t in self.requests[user_id] if t > cutoff]
+            
+            # Prüfe Limit
+            if len(self.requests[user_id]) >= self.max_requests:
+                return False
+            
+            # Registriere neuen Request
+            self.requests[user_id].append(now)
+            return True
     
     def get_remaining(self, user_id: str = "default") -> int:
         """Gibt verbleibende Requests zurück"""
         now = time.time()
-        cutoff = now - self.window_seconds
-        self.requests[user_id] = [t for t in self.requests[user_id] if t > cutoff]
-        return max(0, self.max_requests - len(self.requests[user_id]))
+        with self._lock:
+            cutoff = now - self.window_seconds
+            self.requests[user_id] = [t for t in self.requests[user_id] if t > cutoff]
+            return max(0, self.max_requests - len(self.requests[user_id]))
 
 
 class SecurityUtils:
@@ -64,14 +67,19 @@ class SecurityUtils:
     @staticmethod
     def sanitize_input(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> str:
         """
-        Sanitiert User-Input gegen XSS und Injection
+        Sanitiert User-Input — KEIN HTML-Escaping!
+        
+        HTML-Escaping gehört ausschließlich in die UI-Rendering-Schicht
+        (RichFormatter, BubbleWidget). Hier wird nur:
+        1. Länge begrenzt
+        2. Gefährliche Injection-Pattern blockiert
         
         Args:
             text: Zu sanitierender Text
             max_length: Maximale Länge
         
         Returns:
-            Sanitierter Text
+            Sanitierter Text (raw, kein Escaping)
         """
         if not text:
             return ""
@@ -80,10 +88,7 @@ class SecurityUtils:
         if len(text) > max_length:
             text = text[:max_length]
         
-        # HTML-Entities escapen (gegen XSS)
-        text = html_escape(text, quote=True)
-        
-        # Blockierte Muster prüfen
+        # Blockierte Muster prüfen (auf Raw-Text, VOR jedem Escaping)
         for pattern in SecurityUtils.BLOCKED_PATTERNS:
             if re.search(pattern, text, re.IGNORECASE):
                 text = re.sub(pattern, '[BLOCKED]', text, flags=re.IGNORECASE)
@@ -171,9 +176,11 @@ class SearchEngine:
             import time
             from modules.logger import astra_logger
             
-            # Sanitiere Query
+            # Sanitiere Query (nur Länge begrenzen, KEIN HTML-Escape für Suchbegriffe)
             original_query = query
-            query = SecurityUtils.sanitize_input(query, max_length=200)
+            if len(query) > 200:
+                query = query[:200]
+            query = query.strip()
             
             astra_logger.info(f"🔍 Suche gestartet: '{query}'")
             
@@ -322,6 +329,8 @@ class SearchEngine:
         """Spezial-Zusammenfassung für Wetter"""
         summary = f"Wetter-Informationen zu '{query}':\n\n"
         
+        found_info = False
+        
         # Sammle relevante Infos aus den Ergebnissen
         for result in results[:2]:
             beschreibung = result['beschreibung'].lower()
@@ -332,20 +341,24 @@ class SearchEngine:
             if temp_match:
                 temp = temp_match.group(1)
                 summary += f"🌡️ Temperatur: {temp}°C\n"
+                found_info = True
             
             # Extrahiere Regen
             if 'regen' in beschreibung or 'rain' in beschreibung:
                 summary += f"🌧️ Regen wahrscheinlich\n"
+                found_info = True
             
             if 'sonne' in beschreibung or 'sonnig' in beschreibung:
                 summary += f"☀️ Sonnig\n"
+                found_info = True
             
             if 'bewölkt' in beschreibung or 'cloudy' in beschreibung:
                 summary += f"☁️ Bewölkt\n"
-            
-            # Fallback wenn nichts extrahiert
-            if summary == f"Wetter-Informationen zu '{query}':\n\n":
-                summary += f"{result['beschreibung'][:200]}\n"
+                found_info = True
+        
+        # Fallback: Wenn NICHTS extrahiert werden konnte, nutze rohe Beschreibung
+        if not found_info and results:
+            summary += f"{results[0]['beschreibung'][:200]}\n"
         
         summary += f"\nQuelle: {results[0]['quelle']}"
         return summary

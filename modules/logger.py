@@ -9,16 +9,17 @@ import logging
 import sys
 from pathlib import Path
 from datetime import datetime
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 
 # Log-Verzeichnis
 LOG_DIR = Path(__file__).parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 # Log-Konfiguration
-LOG_FILE = LOG_DIR / f"astra_{datetime.now().strftime('%Y%m%d')}.log"
-MAX_LOG_SIZE = 10 * 1024 * 1024  # 10MB
-BACKUP_COUNT = 5  # Halte 5 alte Logs
+# Nutze TimedRotatingFileHandler für tägliche Rotation statt fixen Dateinamen
+LOG_FILE = LOG_DIR / "astra.log"  # Basis-Dateiname, Handler rotiert automatisch
+MAX_LOG_SIZE = 10 * 1024 * 1024  # 10MB (als Fallback-Limit)
+BACKUP_COUNT = 14  # Halte 14 Tage Logs
 
 
 class ColoredFormatter(logging.Formatter):
@@ -61,13 +62,15 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     # Entferne existierende Handler
     logger.handlers.clear()
     
-    # ===== FILE HANDLER MIT ROTATION =====
-    file_handler = RotatingFileHandler(
+    # ===== FILE HANDLER MIT TAGESROTATION =====
+    file_handler = TimedRotatingFileHandler(
         LOG_FILE, 
-        maxBytes=MAX_LOG_SIZE,  # 10MB
-        backupCount=BACKUP_COUNT,  # Halte 5 alte Dateien
+        when='midnight',  # Rotiere um Mitternacht
+        interval=1,
+        backupCount=BACKUP_COUNT,  # Halte 14 Tage
         encoding='utf-8'
     )
+    file_handler.suffix = '%Y%m%d'  # astra.log.20250614
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter(
         '[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s',

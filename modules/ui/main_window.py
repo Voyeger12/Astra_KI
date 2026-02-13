@@ -142,7 +142,7 @@ class ChatWindow(QMainWindow):
         # Trennlinie
         sep1 = QFrame()
         sep1.setFrameShape(QFrame.Shape.HLine)
-        sep1.setStyleSheet(f"border: 1px solid {COLORS['primary']};")
+        sep1.setStyleSheet("border: none; background-color: #252525; max-height: 1px;")
         left_layout.addWidget(sep1)
         
         # Chat-Liste
@@ -164,7 +164,7 @@ class ChatWindow(QMainWindow):
         new_chat_btn.setMinimumHeight(36)
         new_chat_btn.setStyleSheet(
             f"background-color: {COLORS['primary']}; color: white; border: none; "
-            f"border-radius: 8px; font-weight: bold; font-size: 9pt;"
+            f"border-radius: 14px; font-weight: bold; font-size: 9pt;"
         )
         new_chat_btn.clicked.connect(self.create_new_chat)
         button_layout.addWidget(new_chat_btn)
@@ -172,7 +172,7 @@ class ChatWindow(QMainWindow):
         delete_chat_btn = QPushButton("🗑️ Löschen")
         delete_chat_btn.setMinimumHeight(36)
         delete_chat_btn.setStyleSheet(
-            f"background-color: {COLORS['error']}; color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 9pt;"
+            f"background-color: {COLORS['error']}; color: white; border: none; border-radius: 14px; font-weight: bold; font-size: 9pt;"
         )
         delete_chat_btn.clicked.connect(self.delete_current_chat)
         button_layout.addWidget(delete_chat_btn)
@@ -183,8 +183,8 @@ class ChatWindow(QMainWindow):
         export_btn = QPushButton("📤 Chat exportieren")
         export_btn.setMinimumHeight(36)
         export_btn.setStyleSheet(
-            f"background-color: {COLORS['surface']}; color: {COLORS['text']}; "
-            f"border: 2px solid {COLORS['primary']}; border-radius: 8px; font-weight: bold; font-size: 9pt;"
+            f"background-color: #1e1e1e; color: {COLORS['text']}; "
+            f"border: 1px solid #2a2a2a; border-radius: 14px; font-weight: bold; font-size: 9pt;"
         )
         export_btn.clicked.connect(self.export_current_chat)
         left_layout.addWidget(export_btn)
@@ -193,14 +193,14 @@ class ChatWindow(QMainWindow):
         # Bottom Section
         sep2 = QFrame()
         sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setStyleSheet(f"border: 1px solid {COLORS['primary']};")
+        sep2.setStyleSheet("border: none; background-color: #252525; max-height: 1px;")
         left_layout.addWidget(sep2)
         
         settings_btn = QPushButton("⚙️ Einstellungen")
         settings_btn.setMinimumHeight(36)
         settings_btn.setStyleSheet(
-            f"background-color: {COLORS['surface']}; color: {COLORS['text']}; "
-            f"border: 2px solid {COLORS['primary']}; border-radius: 8px; font-weight: bold; font-size: 9pt;"
+            f"background-color: #1e1e1e; color: {COLORS['text']}; "
+            f"border: 1px solid #2a2a2a; border-radius: 14px; font-weight: bold; font-size: 9pt;"
         )
         settings_btn.clicked.connect(self.open_settings)
         left_layout.addWidget(settings_btn)
@@ -211,7 +211,7 @@ class ChatWindow(QMainWindow):
         status_layout.setContentsMargins(8, 6, 8, 6)
         status_layout.setSpacing(6)
         status_frame.setStyleSheet(
-            f"background-color: {COLORS['surface']}; border: 1px solid {COLORS['primary']}; border-radius: 8px;"
+            f"background-color: #161616; border: 1px solid #252525; border-radius: 14px;"
         )
         
         status_dot = QLabel("🟢")
@@ -266,7 +266,7 @@ class ChatWindow(QMainWindow):
         # Input-Bereich
         input_frame = QFrame()
         input_frame.setStyleSheet(
-            f"background: {COLORS['surface']}; border: 2px solid {COLORS['primary']}; border-radius: 16px;"
+            f"background: {COLORS['surface']}; border: 1px solid #2a2a2a; border-radius: 20px;"
         )
         input_layout = QHBoxLayout(input_frame)
         input_layout.setContentsMargins(14, 10, 10, 10)
@@ -418,6 +418,26 @@ class ChatWindow(QMainWindow):
     
     def select_chat(self, chat_name: str):
         """Wählt einen Chat und zeigt ihn an"""
+        # ✅ Stoppe aktive Generierung beim Chat-Wechsel (verhindert Cross-Chat-Contamination)
+        if self.is_waiting_for_response and chat_name != self.current_chat:
+            self._stop_stream_timer()
+            if self.llm_worker and self.llm_worker.isRunning():
+                self.llm_worker.cancel()
+                self.llm_worker.wait(500)
+            if self.search_worker and self.search_worker.isRunning():
+                self.search_worker.cancel()
+                self.search_worker.wait(300)
+            self.is_waiting_for_response = False
+            self._streaming_started = False
+            self.send_btn.setText("⚡ SENDEN")
+            self.message_input.setEnabled(True)
+            # Partielle Antwort im ALTEN Chat speichern
+            if self._current_response:
+                old_chat = getattr(self, '_response_target_chat', self.current_chat)
+                clean = self.memory_manager.remove_tags_from_response(self._current_response)
+                Thread(target=lambda c=old_chat, r=clean: self.db.save_message(c, "assistant", r + " [abgebrochen]"), daemon=True).start()
+                self._current_response = ""
+        
         self.current_chat = chat_name
         messages = self.db.get_chat_messages(chat_name)
 
@@ -493,9 +513,11 @@ class ChatWindow(QMainWindow):
         self._add_user_bubble(message)
         
         # ⚡ Speichere ASYNCHRON ohne UI zu blockieren!
-        def save_user_msg():
+        # WICHTIG: chat_name als lokale Variable capturen (nicht self.current_chat per Referenz!)
+        target_chat = self.current_chat
+        def save_user_msg(chat=target_chat, msg=message):
             try:
-                self.db.save_message(self.current_chat, "user", message)
+                self.db.save_message(chat, "user", msg)
             except Exception:
                 pass
         
@@ -538,7 +560,8 @@ class ChatWindow(QMainWindow):
         
         if search_results.get('erfolg'):
             zusammenfassung = search_results.get('zusammenfassung', '')
-            num_results = search_results.get('anzahl_ergebnisse', 0)
+            ergebnisse = search_results.get('ergebnisse', [])
+            num_results = len(ergebnisse)
             astra_logger.info(f"✅ Suche erfolgreich: {num_results} Ergebnisse gefunden")
             
             # Formatiere die Zusammenfassung besser für die KI
@@ -592,22 +615,24 @@ class ChatWindow(QMainWindow):
             # 🔥 WICHTIG: Stoppe alte Worker SOFORT!
             if self.llm_worker and self.llm_worker.isRunning():
                 astra_logger.info("⚠️ Stoppe alten LLM Worker...")
-                self.llm_worker.quit()
-                self.llm_worker.wait(500)
+                self.llm_worker.cancel()
+                self.llm_worker.wait(1000)
             
             if self.formatter_worker and self.formatter_worker.isRunning():
-                self.formatter_worker.quit()
+                self.formatter_worker.cancel()
                 self.formatter_worker.wait(500)
             
             if self.search_worker and self.search_worker.isRunning():
-                self.search_worker.quit()
+                self.search_worker.cancel()
                 self.search_worker.wait(500)
             
             # 🔥 KEINE Placeholder more! Streaming zeigt sofort erste Chunk!
             self.is_waiting_for_response = True
             self._streaming_started = False  # Reset Flag
             self._current_response = ""  # Reset Response Buffer
-            astra_logger.info("🔥 Starting LLM Request...")
+            self._generation_id = getattr(self, '_generation_id', 0) + 1  # ✅ Generation-ID anti-stale
+            self._response_target_chat = self.current_chat  # ✅ Ziel-Chat fixieren (Race-Condition-Schutz)
+            astra_logger.info(f"🔥 Starting LLM Request (gen={self._generation_id})...")
             
             # ⚡ OPTIMIERT: Lade NUR den aktuellen Chat, limitiert auf letzte Messages!
             chat_history = self.db.get_chat_messages(self.current_chat)
@@ -642,13 +667,15 @@ class ChatWindow(QMainWindow):
             selected_model = getattr(self, '_selected_model', DEFAULT_MODEL)
             temperature = self.settings_manager.get('temperature', 0.7)
             
-            astra_logger.info(f"🚀 Creating LLMStreamWorker for model={selected_model}, temp={temperature}")
+            astra_logger.info("🚀 Creating LLMStreamWorker for model={selected_model}, temp={temperature}")
             self.llm_worker = LLMStreamWorker(
                 self.ollama,
                 selected_model,
                 messages,
                 temperature
             )
+            # Speichere Generation-ID am Worker für Stale-Check
+            self.llm_worker._gen_id = self._generation_id
             self.llm_worker.chunk_received.connect(self.on_chunk_received)
             self.llm_worker.finished.connect(self.on_response_received)
             self.llm_worker.error.connect(self.on_response_error)
@@ -675,7 +702,7 @@ class ChatWindow(QMainWindow):
         self._stop_stream_timer()
         
         if self.llm_worker and self.llm_worker.isRunning():
-            self.llm_worker.quit()
+            self.llm_worker.cancel()
             self.llm_worker.wait(1000)
         
         self.is_waiting_for_response = False
@@ -694,9 +721,10 @@ class ChatWindow(QMainWindow):
             self.formatter_worker.error.connect(self._on_formatter_error)
             self.formatter_worker.start()
             
-            # Partielle Antwort speichern
+            # Partielle Antwort speichern — in den RICHTIGEN Chat!
+            target_chat = getattr(self, '_response_target_chat', self.current_chat)
             clean = self.memory_manager.remove_tags_from_response(self._current_response)
-            self.db.save_message(self.current_chat, "assistant", clean + " [abgebrochen]")
+            self.db.save_message(target_chat, "assistant", clean + " [abgebrochen]")
         else:
             # Keine Chunks empfangen — "Denkt nach..." Bubble durch Abbruch ersetzen
             self.chat_display.finish_streaming_bubble(
@@ -709,6 +737,12 @@ class ChatWindow(QMainWindow):
     def on_chunk_received(self, chunk: str):
         """Sammelt Chunks und zeigt Echtzeit-Streaming-Text."""
         try:
+            # ✅ Stale-Check: Ignoriere Chunks von alten Workers
+            if hasattr(self, 'llm_worker') and self.llm_worker:
+                worker_gen = getattr(self.llm_worker, '_gen_id', -1)
+                if worker_gen != getattr(self, '_generation_id', 0):
+                    return  # Alter Worker → ignorieren
+            
             self._current_response += chunk
             
             if not self._streaming_started:
@@ -761,10 +795,12 @@ class ChatWindow(QMainWindow):
             self.send_btn.setText("⚡ SENDEN")
             
             full_response = self._current_response
+            # ✅ Ziel-Chat aus fixierter Variable (nicht self.current_chat, der sich geändert haben könnte!)
+            target_chat = getattr(self, '_response_target_chat', self.current_chat)
             
             # ⚡ BACKGROUND: Memory & Speichern (blockiert UI nicht!)
             memory_enabled = self.settings_manager.get('memory_enabled', True)
-            def save_and_extract():
+            def save_and_extract(chat=target_chat):
                 try:
                     if memory_enabled:
                         memory_texts = self.memory_manager.extract_memory_from_response(full_response)
@@ -777,8 +813,8 @@ class ChatWindow(QMainWindow):
                                     astra_logger.error(f"Memory save error: {e}")
                     
                     clean_response = self.memory_manager.remove_tags_from_response(full_response)
-                    self.db.save_message(self.current_chat, "assistant", clean_response)
-                    astra_logger.info("💾 Response saved to database")
+                    self.db.save_message(chat, "assistant", clean_response)
+                    astra_logger.info(f"💾 Response saved to chat '{chat}'")
                 except Exception as e:
                     astra_logger.error(f"Save Error: {e}")
             
@@ -905,8 +941,24 @@ class ChatWindow(QMainWindow):
         # Stoppe LLM Worker falls noch laufen
         try:
             if hasattr(self, 'llm_worker') and self.llm_worker and self.llm_worker.isRunning():
-                self.llm_worker.quit()
-                self.llm_worker.wait(500)  # Kurz warten
+                self.llm_worker.cancel()
+                self.llm_worker.wait(1000)
+        except Exception:
+            pass
+        
+        # Stoppe Formatter Worker
+        try:
+            if hasattr(self, 'formatter_worker') and self.formatter_worker and self.formatter_worker.isRunning():
+                self.formatter_worker.cancel()
+                self.formatter_worker.wait(500)
+        except Exception:
+            pass
+        
+        # Stoppe Search Worker
+        try:
+            if hasattr(self, 'search_worker') and self.search_worker and self.search_worker.isRunning():
+                self.search_worker.cancel()
+                self.search_worker.wait(500)
         except Exception:
             pass
         
@@ -967,9 +1019,11 @@ class ChatWindow(QMainWindow):
         # Verbinde Signal für Textgröße-Änderungen
         settings_dialog.text_size_changed.connect(self.on_text_size_changed)
         
-        if settings_dialog.exec():
-            # Aktualisiere das ausgewählte Model
-            self._selected_model = settings_dialog.model_combo.currentText()
+        settings_dialog.exec()
+        
+        # Model IMMER synchronisieren (auch bei Cancel/X),
+        # weil SettingsManager bereits bei Änderung gespeichert hat
+        self._selected_model = self.settings_manager.get('selected_model', DEFAULT_MODEL)
     
     def on_text_size_changed(self, new_size: int):
         """Wird aufgerufen wenn die Textgröße geändert wird"""

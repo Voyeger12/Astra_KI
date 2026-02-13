@@ -7,7 +7,6 @@ Mit Crash-Recovery und Error-Handling
 
 import sys
 import os
-import sqlite3
 import traceback
 from pathlib import Path
 
@@ -20,24 +19,25 @@ def safe_init_database():
         from modules.database import Database
         db = Database()
         
-        # Test Database-Integrität
-        conn = sqlite3.connect(db.db_path, timeout=5)
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA integrity_check;")
-        result = cursor.fetchone()
-        conn.close()
-        
-        if result[0] != "ok":
-            print(f"⚠️  Database integrity issue detected: {result[0]}")
-            print("   Versuche zu reparieren...")
-            # Database wird automatisch neu initialisiert
+        # Test Database-Integrität über die bestehende Connection (kein zweiter SQLite-Handle!)
+        try:
+            with db._db_lock:
+                conn = db._get_connection()
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA integrity_check;")
+                result = cursor.fetchone()
+                
+                if result[0] != "ok":
+                    print(f"⚠️  Database integrity issue detected: {result[0]}")
+                    print("   Versuche zu reparieren...")
+        except Exception as integrity_err:
+            print(f"⚠️  Integrity-Check fehlgeschlagen: {integrity_err}")
         
         return db
     except Exception as e:
         print(f"❌ Kritischer Database-Fehler: {e}")
         print("   Bitte überprüfen Sie die astra.db Datei")
         raise
-
 try:
     from PyQt6.QtWidgets import QApplication, QMessageBox
     from modules.ui import ChatWindow

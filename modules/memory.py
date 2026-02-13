@@ -122,7 +122,8 @@ class MemoryManager:
     
     def extract_memory_from_response(self, text: str) -> list:
         """
-        Extrahiert ALLE [MERKEN: ...] Tags aus Response
+        Extrahiert ALLE [MERKEN: ...] Tags aus Response.
+        Unterstützt verschachtelte Klammern (z.B. [MERKEN: Array ist [1,2,3]])
         
         Returns:
             Liste von extrahierten Memory-Einträgen (kann leer sein)
@@ -133,40 +134,47 @@ class MemoryManager:
         memories = []
         temp_text = text
         
-        # Finde alle [MERKEN:...] Tags
         while "[MERKEN:" in temp_text:
             start = temp_text.find("[MERKEN:") + 8
-            end = temp_text.find("]", start)
+            # Bracket-sicheres Parsing: Zähle [ und ] um verschachtelte Klammern zu handhaben
+            depth = 1
+            pos = start
+            while pos < len(temp_text) and depth > 0:
+                if temp_text[pos] == '[':
+                    depth += 1
+                elif temp_text[pos] == ']':
+                    depth -= 1
+                pos += 1
             
-            if end != -1:
-                memory_text = temp_text[start:end].strip()
-                if memory_text:  # Nur wenn nicht leer
+            if depth == 0:
+                memory_text = temp_text[start:pos - 1].strip()
+                if memory_text:
                     memories.append(memory_text)
-                temp_text = temp_text[end+1:]  # Weitermachen nach diesem Tag
+                temp_text = temp_text[pos:]
             else:
-                break
+                break  # Unbalancierte Klammern — abbrechen
         
         return memories
     
     def remove_tags_from_response(self, text: str) -> str:
-        """Entfernt [MERKEN:...] und [SUCHE:...] Tags aus der Response"""
-        # Entferne MERKEN-Tags
-        while "[MERKEN:" in text:
-            start = text.find("[MERKEN:")
-            end = text.find("]", start)
-            if end != -1:
-                text = text[:start] + text[end+1:]
-            else:
-                break
-        
-        # Entferne SUCHE-Tags
-        while "[SUCHE:" in text:
-            start = text.find("[SUCHE:")
-            end = text.find("]", start)
-            if end != -1:
-                text = text[:start] + text[end+1:]
-            else:
-                break
+        """Entfernt [MERKEN:...] und [SUCHE:...] Tags aus der Response (bracket-sicher)"""
+        for tag in ["[MERKEN:", "[SUCHE:"]:
+            while tag in text:
+                tag_start = text.find(tag)
+                # Bracket-sicheres Parsing
+                depth = 1
+                pos = tag_start + len(tag)
+                while pos < len(text) and depth > 0:
+                    if text[pos] == '[':
+                        depth += 1
+                    elif text[pos] == ']':
+                        depth -= 1
+                    pos += 1
+                
+                if depth == 0:
+                    text = text[:tag_start] + text[pos:]
+                else:
+                    break  # Unbalanciert — aufhören
         
         return text.strip()
     

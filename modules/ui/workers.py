@@ -22,6 +22,11 @@ class LLMStreamWorker(QThread):
         self.messages = messages
         self.temperature = temperature
         self.full_response = ""
+        self._cancelled = False  # ✅ Cancellation-Flag
+    
+    def cancel(self):
+        """Fordert saubere Abbruch des Workers an."""
+        self._cancelled = True
     
     def run(self):
         try:
@@ -31,22 +36,31 @@ class LLMStreamWorker(QThread):
             
             chunk_count = 0
             
-            # Nutze die neue streaming Methode mit Temperature
-            for chunk in self.ollama.chat_stream(self.model, self.messages, self.temperature):
+            # Nutze die neue streaming Methode mit Temperature + Cancel-Check
+            for chunk in self.ollama.chat_stream(
+                self.model, self.messages, self.temperature,
+                cancel_check=lambda: self._cancelled
+            ):
+                if self._cancelled:
+                    astra_logger.info("⛔ LLMStreamWorker abgebrochen")
+                    break
+                
                 chunk_count += 1
                 
                 if chunk:
                     self.full_response += chunk
                     self.chunk_received.emit(chunk)  # Emit jeden Chunk sofort!
             
-            astra_logger.info(f"✅ Stream fertig: {chunk_count} Chunks, {len(self.full_response)} Zeichen total")
-            self.finished.emit(self.full_response)
+            if not self._cancelled:
+                astra_logger.info(f"✅ Stream fertig: {chunk_count} Chunks, {len(self.full_response)} Zeichen total")
+                self.finished.emit(self.full_response)
             
         except Exception as e:
-            msg = f"❌ LLMStreamWorker Error: {e}"
-            from modules.logger import astra_logger
-            astra_logger.error(msg, exc_info=True)
-            self.error.emit(f"Fehler: {str(e)}")
+            if not self._cancelled:
+                msg = f"❌ LLMStreamWorker Error: {e}"
+                from modules.logger import astra_logger
+                astra_logger.error(msg, exc_info=True)
+                self.error.emit(f"Fehler: {str(e)}")
 
 
 class HealthWorker(QThread):
@@ -95,6 +109,11 @@ class SearchWorker(QThread):
         super().__init__()
         self.query = query
         self.max_results = max_results
+        self._cancelled = False  # ✅ Cancellation-Flag
+    
+    def cancel(self):
+        """Fordert saubere Abbruch des Workers an."""
+        self._cancelled = True
     
     def run(self):
         """Führt die Suche in einem separaten Thread durch"""
@@ -104,15 +123,22 @@ class SearchWorker(QThread):
             
             astra_logger.info(f"SearchWorker: Suche startet für '{self.query}'")
             
+            if self._cancelled:
+                return
+            
             # Führe Suche durch (blockiert nur diesen Worker, nicht die UI!)
             results = SearchEngine.search(self.query, self.max_results)
+            
+            if self._cancelled:
+                return
             
             astra_logger.info(f"SearchWorker: Suche abgeschlossen - erfolg={results.get('erfolg')}")
             
             self.finished.emit(results)
         except Exception as e:
-            astra_logger.error(f"SearchWorker Exception: {str(e)[:150]}")
-            self.error.emit(f"SearchWorker: {str(e)[:100]}")
+            if not self._cancelled:
+                astra_logger.error(f"SearchWorker Exception: {str(e)[:150]}")
+                self.error.emit(f"SearchWorker: {str(e)[:100]}")
 
 
 class RichFormatterWorker(QThread):
@@ -135,21 +161,33 @@ class RichFormatterWorker(QThread):
         self.source = source
         self.confidence = confidence
         self.text_size = text_size  # Wichtig für einheitliche Schriftgröße!
+        self._cancelled = False  # ✅ Cancellation-Flag
+    
+    def cancel(self):
+        """Fordert saubere Abbruch des Workers an."""
+        self._cancelled = True
     
     def run(self):
         """Formatiert Text mit RichFormatter im Worker-Thread"""
         try:
+            if self._cancelled:
+                return
+            
             from modules.ui.rich_formatter import RichFormatter
             
             # Formatiere den Text (diese Operation kann langsam sein)
             formatted_html = RichFormatter.format_text(self.text)
+            
+            if self._cancelled:
+                return
             
             # Baue die komplette Bubble mit Badges
             html = self._build_bubble_html(formatted_html)
             
             self.finished.emit(html)
         except Exception as e:
-            self.error.emit(f"RichFormatter: {str(e)[:100]}")
+            if not self._cancelled:
+                self.error.emit(f"RichFormatter: {str(e)[:100]}")
     
     def _build_bubble_html(self, formatted_content: str) -> str:
         """Gibt nur den formatierten Inhalt zurück.

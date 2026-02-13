@@ -236,10 +236,16 @@ class ChatDisplayWidget(QScrollArea):
             if item and item.widget():
                 wrapper = item.widget()
                 for child in wrapper.findChildren(BubbleWidget):
-                    if old_text in child.label.text():
-                        child.label.setText(
-                            child.label.text().replace(old_text, new_text)
-                        )
+                    current = child.label.text()
+                    # Robuster Vergleich: sowohl exakt als auch plain-text
+                    if old_text in current:
+                        child.label.setText(current.replace(old_text, new_text))
+                        return True
+                    # Fallback: Vergleiche ohne HTML-Tags
+                    import re
+                    plain = re.sub(r'<[^>]+>', '', current)
+                    if old_text in plain:
+                        child.label.setText(new_text)
                         return True
         return False
 
