@@ -60,7 +60,7 @@ from modules.logger import astra_logger
 
 # Modularisierte Imports aus ui Submodule
 from modules.ui.styles import StyleSheet
-from modules.ui.workers import LLMStreamWorker, HealthWorker, SearchWorker, MemoryExtractWorker
+from modules.ui.workers import LLMStreamWorker, HealthWorker, SearchWorker
 from modules.ui.settings_manager import SettingsManager
 from modules.ui.settings_dialog import SettingsDialog
 from modules.ui.rich_formatter import RichFormatter
@@ -70,6 +70,10 @@ from modules.updater import UpdateChecker, CURRENT_VERSION
 
 class ChatWindow(QMainWindow):
     """Hauptfenster der ASTRA-Anwendung"""
+    
+    # Signals für Memory-Extraktion (Thread-sicher: emit aus Thread → Slot im Main-Thread)
+    _memory_result = pyqtSignal(str, str)   # (extracted_text, category)
+    _memory_error = pyqtSignal(str)          # fallback_text
     
     def __init__(self, db: Database = None):
         super().__init__()
@@ -141,6 +145,10 @@ class ChatWindow(QMainWindow):
         
         # 🔄 Auto-Update Check (non-blocking)
         self._check_for_updates()
+        
+        # 🧠 Memory-Extraction Signals verbinden
+        self._memory_result.connect(self._on_memory_extracted)
+        self._memory_error.connect(self._on_memory_extract_error)
         
         # 🔄 Modelle asynchron laden (für Settings-Dialog ohne Lag)
         self._cached_models = None
@@ -571,17 +579,27 @@ class ChatWindow(QMainWindow):
         
         Nutzt das lokale Ollama-Modell um natürliche Sprache in
         strukturierte Fakten (z.B. 'Name: Duncan') umzuwandeln.
+        Verwendet Thread + pyqtSignal für zuverlässige Thread-Kommunikation.
         """
-        self._memory_worker = MemoryExtractWorker(
-            self.ollama, self._selected_model, raw_text
-        )
-        self._memory_worker.finished.connect(self._on_memory_extracted)
-        self._memory_worker.failed.connect(self._on_memory_extract_error)
-        self._memory_worker.start()
+        def do_extract(text=raw_text, model=self._selected_model):
+            try:
+                astra_logger.info(f"🧠 Memory-Extraktion gestartet: '{text}'")
+                result = self.ollama.extract_fact(text, model)
+                astra_logger.info(f"🧠 Memory-Extraktion Ergebnis: '{result}'")
+                self._memory_result.emit(result, "personal")
+            except Exception as e:
+                astra_logger.warning(f"🧠 Memory-Extraktion fehlgeschlagen: {e}")
+                self._memory_error.emit(text)
+        
+        Thread(target=do_extract, daemon=True).start()
     
     def _on_memory_extracted(self, extracted_text: str, category: str):
         """Callback wenn LLM-Extraktion erfolgreich abgeschlossen ist"""
-        self.memory_manager.learn(extracted_text, category)
+        astra_logger.info(f"🧠 Speichere in DB: '{extracted_text}' (Kategorie: {category})")
+        success = self.memory_manager.learn(extracted_text, category)
+        astra_logger.info(f"🧠 DB-Speicherung: {'✅ Erfolg' if success else '❌ Fehlgeschlagen'}")
+        if not success:
+            astra_logger.error("🧠 memory_manager.learn() hat False zurückgegeben!")
         
         display_text = extracted_text
         self._add_assistant_bubble(

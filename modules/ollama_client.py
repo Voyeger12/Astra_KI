@@ -79,24 +79,22 @@ class OllamaClient:
             Strukturierter Fakt (z.B. "Name: Duncan") oder Originaltext als Fallback
         """
         prompt = (
-            "Extrahiere den Fakt aus folgendem Text und gib ihn in GENAU diesem Format zurück:\n"
+            "Du bist ein Daten-Extraktor. Extrahiere den Fakt und antworte EXAKT im Format:\n"
             "Kategorie: Wert\n\n"
-            "Mögliche Kategorien: Name, Alter, Wohnort, Beruf, Lieblingsfarbe, "
+            "Kategorien: Name, Alter, Wohnort, Beruf, Lieblingsfarbe, "
             "Lieblingsessen, Hobby, Mag, Rolle, Fakt\n\n"
             "Beispiele:\n"
-            '- "ich heiße Duncan" → Name: Duncan\n'
-            '- "ich bin 25 Jahre alt" → Alter: 25\n'
-            '- "ich wohne in Berlin" → Wohnort: Berlin\n'
-            '- "ich arbeite als Programmierer" → Beruf: Programmierer\n'
-            '- "ich mag Pizza" → Mag: Pizza\n'
-            '- "meine Lieblingsfarbe ist Rot" → Lieblingsfarbe: Rot\n'
-            '- "ich Duncan heiße" → Name: Duncan\n'
-            '- "ich in Berlin wohne" → Wohnort: Berlin\n'
-            '- "ich als Lehrer arbeite" → Beruf: Lehrer\n'
-            '- "Katzen sind cool" → Fakt: Katzen sind cool\n\n'
-            f'Text: "{text}"\n\n'
-            'Antworte NUR mit "Kategorie: Wert", nichts anderes. '
-            'Keine Erklärung, kein Satz, keine Anführungszeichen.'
+            "Eingabe: ich heiße Duncan → Name: Duncan\n"
+            "Eingabe: ich bin 25 Jahre alt → Alter: 25\n"
+            "Eingabe: ich wohne in Berlin → Wohnort: Berlin\n"
+            "Eingabe: ich arbeite als Programmierer → Beruf: Programmierer\n"
+            "Eingabe: ich mag Pizza → Mag: Pizza\n"
+            "Eingabe: meine Lieblingsfarbe ist Rot → Lieblingsfarbe: Rot\n"
+            "Eingabe: ich Duncan heiße → Name: Duncan\n"
+            "Eingabe: ich in Berlin wohne → Wohnort: Berlin\n"
+            "Eingabe: Katzen sind cool → Fakt: Katzen sind cool\n\n"
+            f"Eingabe: {text}\n\n"
+            "Ausgabe:"
         )
         
         try:
@@ -104,23 +102,31 @@ class OllamaClient:
                 f"{self.base_url}/chat",
                 json={
                     "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
+                    "messages": [
+                        {"role": "system", "content": "Du extrahierst Fakten im Format 'Kategorie: Wert'. Antworte NUR mit dem Ergebnis, kein ganzer Satz, keine Anführungszeichen."},
+                        {"role": "user", "content": prompt}
+                    ],
                     "stream": False,
                     "options": {
-                        "temperature": 0.1,
-                        "num_predict": 50,
+                        "temperature": 0.0,
+                        "num_predict": 30,
                     },
                 },
-                timeout=10
+                timeout=15
             )
             if response.status_code == 200:
                 result = response.json().get("message", {}).get("content", "").strip()
+                # Bereinigen: Anführungszeichen, Whitespace, nur erste Zeile
+                result = result.strip('"\'\'→ ').strip()
+                result = result.split('\n')[0].strip()
                 # Validierung: Muss "Kategorie: Wert" Format haben
                 if ":" in result and len(result) < 200:
-                    # Bereinigen: Anführungszeichen, Whitespace, nur erste Zeile
-                    result = result.strip('"\'\'').strip()
-                    result = result.split('\n')[0].strip()
-                    return result
+                    # Kategorie und Wert splitten für finale Validierung
+                    parts = result.split(":", 1)
+                    category = parts[0].strip()
+                    value = parts[1].strip() if len(parts) > 1 else ""
+                    if value and len(category) < 30:
+                        return f"{category}: {value}"
             return text  # Fallback: Originaltext
         except Exception:
             return text  # Fallback: Originaltext

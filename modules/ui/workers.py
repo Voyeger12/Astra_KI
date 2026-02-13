@@ -63,28 +63,6 @@ class LLMStreamWorker(QThread):
                 self.error.emit(f"Fehler: {str(e)}")
 
 
-class MemoryExtractWorker(QThread):
-    """Worker-Thread für LLM-basierte Faktenextraktion aus Merke-Kommandos"""
-    
-    finished = pyqtSignal(str, str)  # (extracted_text, category)
-    failed = pyqtSignal(str)         # fallback_text bei Fehler
-    
-    def __init__(self, ollama: OllamaClient, model: str, raw_text: str):
-        super().__init__()
-        self.ollama = ollama
-        self.model = model
-        self.raw_text = raw_text
-    
-    def run(self):
-        try:
-            result = self.ollama.extract_fact(self.raw_text, self.model)
-            self.finished.emit(result, "personal")
-        except Exception as e:
-            from modules.logger import astra_logger
-            astra_logger.warning(f"LLM-Faktenextraktion fehlgeschlagen: {e}")
-            self.failed.emit(self.raw_text)
-
-
 class HealthWorker(QThread):
     """Background thread to periodically check Ollama health without blocking UI."""
     alive = pyqtSignal(bool)
