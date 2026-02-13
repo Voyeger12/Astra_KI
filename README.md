@@ -4,10 +4,10 @@
 
 **Dein lokaler KI-Assistent — privat, schnell, intelligent.**
 
-[![Python 3.13+](https://img.shields.shields.io/badge/Python-3.13+-blue?logo=python&logoColor=white)](https://python.org)
-[![Tests](DEIN_TEST_LINK?label=110%20Tests%20Passed)](https://github.com/Voyeger12/Astra_KI/actions)
-[![Security](https://img.shields.shields.io/badge/Security-CodeQL-brightgreen?logo=github-actions&logoColor=white)](https://github.com/Voyeger12/Astra_KI/security/code-scanning)
-[![License: MIT](https://img.shields.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.13+](https://img.shields.io/badge/Python-3.13+-blue?logo=python&logoColor=white)](https://python.org)
+[![Tests](https://github.com/Voyeger12/Astra_KI/actions/workflows/python-tests.yml/badge.svg?label=110%20Tests%20Passed)](https://github.com/Voyeger12/Astra_KI/actions)
+[![Security](https://img.shields.io/badge/Security-CodeQL-brightgreen?logo=github-actions&logoColor=white)](https://github.com/Voyeger12/Astra_KI/security/code-scanning)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
 
