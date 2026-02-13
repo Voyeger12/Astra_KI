@@ -181,20 +181,9 @@ class RichFormatterWorker(QThread):
             if self._cancelled:
                 return
             
-            # Baue die komplette Bubble mit Badges
-            html = self._build_bubble_html(formatted_html)
-            
-            self.finished.emit(html)
+            self.finished.emit(formatted_html)
         except Exception as e:
             if not self._cancelled:
                 self.error.emit(f"RichFormatter: {str(e)[:100]}")
-    
-    def _build_bubble_html(self, formatted_content: str) -> str:
-        """Gibt nur den formatierten Inhalt zurück.
-        
-        Das Bubble-Styling (Hintergrund, Rundung, Footer) übernimmt
-        jetzt BubbleWidget per Qt Stylesheet — kein HTML-Wrapper nötig.
-        """
-        return formatted_content
 
 

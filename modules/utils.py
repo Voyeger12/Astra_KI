@@ -8,7 +8,6 @@ import re
 import time
 import threading
 from typing import List, Dict
-from html import escape as html_escape
 from collections import defaultdict
 
 

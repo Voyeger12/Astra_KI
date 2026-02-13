@@ -56,9 +56,9 @@ class MemoryManager:
     
     def get_system_prompt(self) -> str:
         """
-        Generiert den System-Prompt mit integriertem Memory
+        Generiert den System-Prompt mit integriertem Memory.
         ⚡ GECACHT für bessere Performance!
-        Lädt optional persona.txt wenn vorhanden
+        Lädt Persona aus config.persona (Fallback: SYSTEM_PROMPT_TEMPLATE).
         
         Returns:
             Vollständiger System-Prompt für die KI
@@ -83,7 +83,8 @@ class MemoryManager:
             try:
                 memory = self.get_memory_string()
             except Exception as e:
-                print(f"⚠️  Fehler bei get_memory_string(): {e}")
+                from modules.logger import astra_logger
+                astra_logger.warning(f"Fehler bei get_memory_string(): {e}")
                 memory = ""
             
             # Persona aus config/persona.py laden
@@ -92,7 +93,7 @@ class MemoryManager:
                 from config.persona import get_persona
                 result = get_persona(wissen=memory)
             except ImportError:
-                # Fallback: persona.txt (Legacy-Support)
+                # Fallback: Legacy persona.txt (wird nicht mehr mitgeliefert)
                 persona_path = Path(__file__).parent.parent / "persona.txt"
                 if persona_path.exists():
                     try:
@@ -100,10 +101,12 @@ class MemoryManager:
                             persona_content = f.read()
                             result = persona_content.format(wissen=memory)
                     except Exception as e:
-                        print(f"⚠️  Fehler bei persona.txt: {e}")
+                        from modules.logger import astra_logger
+                        astra_logger.warning(f"Fehler bei persona.txt: {e}")
                         result = None
             except Exception as e:
-                print(f"⚠️  Fehler bei Persona: {e}")
+                from modules.logger import astra_logger
+                astra_logger.warning(f"Fehler bei Persona: {e}")
                 result = None
             
             # Fallback auf Standard-Template
@@ -111,8 +114,8 @@ class MemoryManager:
                 try:
                     result = SYSTEM_PROMPT_TEMPLATE.format(memory=memory)
                 except Exception as e:
-                    print(f"⚠️  Fehler bei SYSTEM_PROMPT_TEMPLATE.format(): {e}")
-                    # LETZTER FALLBACK: Gib einfach den Template direkt zurück
+                    from modules.logger import astra_logger
+                    astra_logger.warning(f"Fehler bei SYSTEM_PROMPT_TEMPLATE.format(): {e}")
                     result = SYSTEM_PROMPT_TEMPLATE
             
             # ⚡ Cache das Ergebnis
@@ -122,9 +125,8 @@ class MemoryManager:
             return result
             
         except Exception as e:
-            print(f"❌ KRITISCHER FEHLER in get_system_prompt(): {e}")
-            import traceback
-            traceback.print_exc()
+            from modules.logger import astra_logger
+            astra_logger.error(f"KRITISCHER FEHLER in get_system_prompt(): {e}", exc_info=True)
             # ABSOLUTE ZURÜCKFALL: Gib einen minimalen Prompt zurück
             return "Du bist ein hilfreicher KI-Assistent. Antworte auf Deutsch."
     
@@ -225,5 +227,6 @@ class MemoryManager:
             return "\n".join(f"[{e['created_at']}] {e['content']}" for e in unique)
         
         except Exception as e:
-            print(f"⚠️  Fehler bei get_memory_string_deduplicated(): {e}")
+            from modules.logger import astra_logger
+            astra_logger.warning(f"Fehler bei get_memory_string_deduplicated(): {e}")
             return "Fehler beim Memory laden - Weitermachen ohne Memory"

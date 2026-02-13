@@ -59,7 +59,8 @@ class SettingsManager:
                     merged = {**self.DEFAULT_SETTINGS, **loaded}
                     return merged
             except Exception as e:
-                print(f"Fehler beim Laden von Settings: {e}")
+                from modules.logger import astra_logger
+                astra_logger.warning(f"Fehler beim Laden von Settings: {e}")
                 return self.DEFAULT_SETTINGS.copy()
         
         return self.DEFAULT_SETTINGS.copy()
@@ -71,7 +72,8 @@ class SettingsManager:
                 with open(self.settings_file, 'w', encoding='utf-8') as f:
                     json.dump(self.settings, f, indent=2)
         except Exception as e:
-            print(f"Fehler beim Speichern von Settings: {e}")
+            from modules.logger import astra_logger
+            astra_logger.error(f"Fehler beim Speichern von Settings: {e}")
     
     def _schedule_save(self):
         """Debounced Save — wartet 500ms bevor gespeichert wird.

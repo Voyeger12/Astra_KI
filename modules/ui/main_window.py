@@ -726,7 +726,7 @@ class ChatWindow(QMainWindow):
             selected_model = getattr(self, '_selected_model', DEFAULT_MODEL)
             temperature = self.settings_manager.get('temperature', 0.7)
             
-            astra_logger.info("🚀 Creating LLMStreamWorker for model={selected_model}, temp={temperature}")
+            astra_logger.info(f"🚀 Creating LLMStreamWorker for model={selected_model}, temp={temperature}")
             self.llm_worker = LLMStreamWorker(
                 self.ollama,
                 selected_model,

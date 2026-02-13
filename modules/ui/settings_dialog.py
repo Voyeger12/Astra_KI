@@ -21,9 +21,8 @@ from modules.ui.settings_manager import SettingsManager
 class SettingsDialog(QDialog):
     """Dialog für Einstellungen - Modernes Design"""
     
-    # Signale für Änderungen
+    # Signal für Textgrößen-Änderungen
     text_size_changed = pyqtSignal(int)
-    settings_changed = pyqtSignal(dict)
     
     def __init__(self, parent=None, memory_manager=None, settings_manager=None):
         super().__init__(parent)

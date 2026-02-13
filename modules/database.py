@@ -59,7 +59,7 @@ class Database:
                 # Linux/Mac: 0o600 = rw------- (nur Owner)
                 os.chmod(self.db_path, 0o600)
         except Exception as e:
-            print(f"⚠️ Konnte Dateiberechtigungen nicht setzen: {e}")
+            astra_logger.debug(f"Konnte Dateiberechtigungen nicht setzen: {e}")
     
     def _backup_database(self) -> bool:
         """

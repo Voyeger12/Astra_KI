@@ -61,8 +61,6 @@ def build_exe():
     # Data-Files sammeln (werden in EXE eingebettet)
     data_files = []
     data_mappings = [
-        # persona.py ist Teil von config/
-        ("config.py",                "."),
         ("assets",                   "assets"),
         ("config/settings.json",     "config"),
     ]
@@ -116,6 +114,10 @@ def build_exe():
         "--hidden-import=logging",
         "--hidden-import=json",
         "--hidden-import=urllib.request",
+        
+        # ── Config Package ──
+        "--hidden-import=config",
+        "--hidden-import=config.persona",
         
         # ── ASTRA Module (explizit) ──
         "--hidden-import=modules",
