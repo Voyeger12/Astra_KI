@@ -23,13 +23,6 @@ class MultiLineInput(QTextEdit):
     """
     send_requested = pyqtSignal()
 
-    # Inline-Styling für Kontextmenü (muss globales App-Stylesheet überschreiben)
-    _MENU_STYLE = (
-        "QMenu { background-color: #2a2a2a; border: 1px solid #555; padding: 4px; }"
-        "QMenu::item { background-color: #2a2a2a; color: #e8e8e8; padding: 6px 28px; }"
-        "QMenu::item:selected { background-color: #ff4b4b; color: white; }"
-    )
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptRichText(False)
@@ -39,14 +32,57 @@ class MultiLineInput(QTextEdit):
         self.setMinimumHeight(self._min_height)
         self.setMaximumHeight(self._min_height)
         self.document().contentsChanged.connect(self._auto_resize)
+        # Eigenes Kontextmenü — Standard-Menü wird vom globalen Stylesheet zerstört
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
 
-    def contextMenuEvent(self, event):
-        """Eigenes Kontextmenü mit explizitem Styling (globales Stylesheet überschreiben)"""
-        menu = self.createStandardContextMenu()
-        menu.setStyleSheet(self._MENU_STYLE)
-        # setAttribute sorgt dafür, dass Qt das Menü nach dem Schließen selbst aufräumt
-        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        menu.popup(event.globalPos())
+    def _show_context_menu(self, pos):
+        """Manuelles Kontextmenü mit echten, verbundenen Aktionen"""
+        from PyQt6.QtWidgets import QMenu, QApplication
+        
+        menu = QMenu(self)
+        menu.setStyleSheet(
+            "QMenu { background-color: #2a2a2a; border: 1px solid #555; padding: 4px; }"
+            "QMenu::item { background-color: transparent; color: #e8e8e8; padding: 6px 28px; }"
+            "QMenu::item:selected { background-color: #ff4b4b; color: white; }"
+            "QMenu::item:disabled { color: #666; }"
+        )
+        
+        clipboard = QApplication.clipboard()
+        has_selection = self.textCursor().hasSelection()
+        has_clipboard = bool(clipboard.text())
+        can_undo = self.document().isUndoAvailable()
+        can_redo = self.document().isRedoAvailable()
+        
+        undo_act = menu.addAction("Rückgängig")
+        undo_act.setEnabled(can_undo)
+        undo_act.triggered.connect(self.undo)
+        
+        redo_act = menu.addAction("Wiederholen")
+        redo_act.setEnabled(can_redo)
+        redo_act.triggered.connect(self.redo)
+        
+        menu.addSeparator()
+        
+        cut_act = menu.addAction("Ausschneiden")
+        cut_act.setEnabled(has_selection)
+        cut_act.triggered.connect(self.cut)
+        
+        copy_act = menu.addAction("Kopieren")
+        copy_act.setEnabled(has_selection)
+        copy_act.triggered.connect(self.copy)
+        
+        paste_act = menu.addAction("Einfügen")
+        paste_act.setEnabled(has_clipboard)
+        paste_act.triggered.connect(self.paste)
+        
+        menu.addSeparator()
+        
+        select_all_act = menu.addAction("Alles auswählen")
+        select_all_act.setEnabled(bool(self.toPlainText()))
+        select_all_act.triggered.connect(self.selectAll)
+        
+        menu.exec(self.mapToGlobal(pos))
 
     def keyPressEvent(self, event):
         """Enter sendet, Shift+Enter fügt Zeilenumbruch ein."""
