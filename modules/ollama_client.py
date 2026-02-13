@@ -78,22 +78,40 @@ class OllamaClient:
         Returns:
             Strukturierter Fakt (z.B. "Name: Duncan") oder Originaltext als Fallback
         """
+        # Erlaubte Kategorien für strikte Validierung
+        VALID_CATEGORIES = {
+            "Name", "Alter", "Wohnort", "Beruf", "Lieblingsfarbe",
+            "Lieblingsessen", "Hobby", "Mag", "Rolle", "Fakt",
+            "Lieblingstier", "Lieblingsfilm", "Lieblingsmusik",
+            "Lieblingsband", "Lieblingsspiel", "Sprache", "Haustier"
+        }
+        
         prompt = (
-            "Du bist ein Daten-Extraktor. Extrahiere den Fakt und antworte EXAKT im Format:\n"
-            "Kategorie: Wert\n\n"
-            "Kategorien: Name, Alter, Wohnort, Beruf, Lieblingsfarbe, "
-            "Lieblingsessen, Hobby, Mag, Rolle, Fakt\n\n"
-            "Beispiele:\n"
-            "Eingabe: ich heiße Duncan → Name: Duncan\n"
-            "Eingabe: ich bin 25 Jahre alt → Alter: 25\n"
-            "Eingabe: ich wohne in Berlin → Wohnort: Berlin\n"
-            "Eingabe: ich arbeite als Programmierer → Beruf: Programmierer\n"
-            "Eingabe: ich mag Pizza → Mag: Pizza\n"
-            "Eingabe: meine Lieblingsfarbe ist Rot → Lieblingsfarbe: Rot\n"
-            "Eingabe: ich Duncan heiße → Name: Duncan\n"
-            "Eingabe: ich in Berlin wohne → Wohnort: Berlin\n"
-            "Eingabe: Katzen sind cool → Fakt: Katzen sind cool\n\n"
-            f"Eingabe: {text}\n\n"
+            "AUFGABE: Extrahiere den Fakt. Antworte NUR mit Kategorie: Wert\n"
+            "KEINE ganzen Sätze. KEIN 'Du'. NUR den Wert.\n\n"
+            "REGELN:\n"
+            "- 'ich heiße X' oder 'ich X heiße' → Name: X\n"
+            "- 'ich bin X Jahre alt' oder 'ich X Jahre alt bin' → Alter: X\n"
+            "- 'ich wohne in X' oder 'ich in X wohne' → Wohnort: X\n"
+            "- 'ich arbeite als X' oder 'ich als X arbeite' → Beruf: X\n"
+            "- 'ich mag X' oder 'ich X mag' → Mag: X\n"
+            "- 'meine Lieblingsfarbe ist X' → Lieblingsfarbe: X\n"
+            "- 'ich bin X' (kein Alter) → Rolle: X\n"
+            "- Alles andere → Fakt: (kurze Zusammenfassung)\n\n"
+            "WICHTIG: Der Wert muss das ORIGINAL-Wort sein, kein Satz!\n\n"
+            "Eingabe: ich heiße Duncan\n"
+            "Ausgabe: Name: Duncan\n\n"
+            "Eingabe: ich bin 25 Jahre alt\n"
+            "Ausgabe: Alter: 25\n\n"
+            "Eingabe: ich mag Pizza\n"
+            "Ausgabe: Mag: Pizza\n\n"
+            "Eingabe: ich mag Eiscreme\n"
+            "Ausgabe: Mag: Eiscreme\n\n"
+            "Eingabe: ich Duncan heiße\n"
+            "Ausgabe: Name: Duncan\n\n"
+            "Eingabe: ich 25 Jahre alt bin\n"
+            "Ausgabe: Alter: 25\n\n"
+            f"Eingabe: {text}\n"
             "Ausgabe:"
         )
         
@@ -103,32 +121,46 @@ class OllamaClient:
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "Du extrahierst Fakten im Format 'Kategorie: Wert'. Antworte NUR mit dem Ergebnis, kein ganzer Satz, keine Anführungszeichen."},
+                        {"role": "system", "content": "Antworte IMMER exakt im Format 'Kategorie: Wert'. Nur 2-4 Wörter. Kein Satz. Kein 'Du'. Kein Punkt am Ende."},
                         {"role": "user", "content": prompt}
                     ],
                     "stream": False,
                     "options": {
                         "temperature": 0.0,
-                        "num_predict": 30,
+                        "num_predict": 20,
                     },
                 },
                 timeout=15
             )
             if response.status_code == 200:
                 result = response.json().get("message", {}).get("content", "").strip()
-                # Bereinigen: Anführungszeichen, Whitespace, nur erste Zeile
-                result = result.strip('"\'\'→ ').strip()
+                from modules.logger import astra_logger
+                astra_logger.info(f"🧠 LLM extract_fact raw: '{result}'")
+                
+                # Bereinigen
+                result = result.strip('"\'\'→ .\n').strip()
                 result = result.split('\n')[0].strip()
-                # Validierung: Muss "Kategorie: Wert" Format haben
-                if ":" in result and len(result) < 200:
-                    # Kategorie und Wert splitten für finale Validierung
+                result = result.rstrip('.')  # Punkt am Ende entfernen
+                
+                if ":" in result:
                     parts = result.split(":", 1)
                     category = parts[0].strip()
-                    value = parts[1].strip() if len(parts) > 1 else ""
-                    if value and len(category) < 30:
-                        return f"{category}: {value}"
+                    value = parts[1].strip().rstrip('.')
+                    
+                    # Strikte Validierung: Kategorie muss erlaubt sein
+                    if category in VALID_CATEGORIES and value and len(value) < 100:
+                        # Wert darf kein ganzer Satz sein (kein "Du", kein Verb am Anfang)
+                        if not value.lower().startswith(("du ", "er ", "sie ", "es ", "ich ")):
+                            return f"{category}: {value}"
+                        else:
+                            astra_logger.warning(f"🧠 LLM gab Satz statt Wert: '{result}'")
+                    else:
+                        astra_logger.warning(f"🧠 Ungültige Kategorie/Wert: '{category}' / '{value}'")
+                
             return text  # Fallback: Originaltext
-        except Exception:
+        except Exception as e:
+            from modules.logger import astra_logger
+            astra_logger.warning(f"🧠 extract_fact Exception: {e}")
             return text  # Fallback: Originaltext
     
     def chat_stream(self, model: str, messages: List[Dict[str, str]], temperature: float = 0.7, callback=None, cancel_check=None):
