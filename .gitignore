@@ -32,5 +32,4 @@ build/
 *.exe
 *.spec
 # Benutzerspezifische Konfiguration
-persona.txt
 config/settings.json
