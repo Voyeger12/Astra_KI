@@ -91,9 +91,9 @@ if %HC_RESULT% NEQ 0 (
     echo [WARN] Start wird trotz Fehlern erzwungen...
 )
 
-REM Starte Anwendung (Konsole schliesst sich automatisch nach App-Ende)
+REM Starte Anwendung (Konsole schliesst sich sofort, App laeuft im Hintergrund)
 echo.
 echo [START] Starte ASTRA AI...
 echo.
-python main.py
+start "" pythonw main.py
 exit
