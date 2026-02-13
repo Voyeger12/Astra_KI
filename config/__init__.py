@@ -1,7 +1,8 @@
 """
 ASTRA AI - Konfiguration und Konstanten
 =======================================
-Zentrale Konfiguration für alle Module
+Zentrale Konfiguration für alle Module.
+Persona-Definition in config.persona
 """
 
 from pathlib import Path
@@ -9,7 +10,8 @@ from pathlib import Path
 # ============================================================================
 # PFADE
 # ============================================================================
-APP_DIR = Path(__file__).parent
+# .parent.parent: config/__init__.py → config/ → Projekt-Root
+APP_DIR = Path(__file__).parent.parent
 DATA_DIR = APP_DIR / "data"
 DB_PATH = DATA_DIR / "astra.db"
 

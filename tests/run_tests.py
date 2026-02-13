@@ -677,7 +677,7 @@ class TestErrorResilience(unittest.TestCase):
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def test_empty_persona_fallback(self):
-        """Wenn persona.txt fehlt, wird SYSTEM_PROMPT_TEMPLATE genutzt"""
+        """Persona wird aus config/persona.py geladen, Fallback auf SYSTEM_PROMPT_TEMPLATE"""
         tmp_dir = tempfile.mkdtemp()
         db_path = Path(tmp_dir) / "test.db"
         try:
@@ -689,9 +689,19 @@ class TestErrorResilience(unittest.TestCase):
             prompt = mm.get_system_prompt()
             self.assertIsNotNone(prompt)
             self.assertGreater(len(prompt), 50)
+            self.assertIn("Astra", prompt)
             db.close()
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    def test_persona_module_importable(self):
+        """config/persona.py ist als Modul importierbar"""
+        from config.persona import get_persona, PERSONA_TEMPLATE
+        self.assertIn("{wissen}", PERSONA_TEMPLATE)
+        result = get_persona("Test-Memory")
+        self.assertIn("Test-Memory", result)
+        self.assertIn("Astra", result)
+        self.assertNotIn("{wissen}", result)  # Placeholder muss ersetzt sein
 
 
 # ============================================================================
@@ -944,8 +954,8 @@ class TestHealthChecker(unittest.TestCase):
         from modules.utils import HealthChecker
         results = HealthChecker._check_filesystem()
         self.assertGreater(len(results), 0)
-        # config.py muss existieren
-        config_check = [r for r in results if r["name"] == "config.py"]
+        # config/__init__.py muss existieren
+        config_check = [r for r in results if r["name"] == "config/__init__.py"]
         self.assertEqual(len(config_check), 1)
         self.assertEqual(config_check[0]["level"], HealthChecker.OK)
 

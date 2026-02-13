@@ -61,7 +61,7 @@ def build_exe():
     # Data-Files sammeln (werden in EXE eingebettet)
     data_files = []
     data_mappings = [
-        ("persona.txt",              "."),
+        # persona.py ist Teil von config/
         ("config.py",                "."),
         ("assets",                   "assets"),
         ("config/settings.json",     "config"),

@@ -448,6 +448,7 @@ class HealthChecker:
             ("GPU-Detect",    "modules.gpu_detect",    "detect_gpu"),
             ("RichFormatter", "modules.ui.rich_formatter", "RichFormatter"),
             ("Updater",       "modules.updater",       "UpdateChecker"),
+            ("Persona",       "config.persona",        "get_persona"),
         ]
         for name, mod_path, attr in modules:
             try:
@@ -495,8 +496,8 @@ class HealthChecker:
 
         # Kritische Dateien
         for name, path, critical in [
-            ("config.py",          app_dir / "config.py", True),
-            ("persona.txt",        app_dir / "persona.txt", False),
+            ("config/__init__.py", app_dir / "config" / "__init__.py", True),
+            ("config/persona.py",  app_dir / "config" / "persona.py", True),
             ("assets/check.svg",   app_dir / "assets" / "check.svg", False),
             ("config/settings.json", app_dir / "config" / "settings.json", False),
         ]:

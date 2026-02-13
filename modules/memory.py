@@ -86,17 +86,25 @@ class MemoryManager:
                 print(f"⚠️  Fehler bei get_memory_string(): {e}")
                 memory = ""
             
-            # Versuche persona.txt zu laden (optional)
+            # Persona aus config/persona.py laden
             result = None
-            persona_path = Path(__file__).parent.parent / "persona.txt"
-            if persona_path.exists():
-                try:
-                    with open(persona_path, 'r', encoding='utf-8') as f:
-                        persona_content = f.read()
-                        result = persona_content.format(wissen=memory)
-                except Exception as e:
-                    print(f"⚠️  Fehler bei persona.txt: {e}")
-                    result = None
+            try:
+                from config.persona import get_persona
+                result = get_persona(wissen=memory)
+            except ImportError:
+                # Fallback: persona.txt (Legacy-Support)
+                persona_path = Path(__file__).parent.parent / "persona.txt"
+                if persona_path.exists():
+                    try:
+                        with open(persona_path, 'r', encoding='utf-8') as f:
+                            persona_content = f.read()
+                            result = persona_content.format(wissen=memory)
+                    except Exception as e:
+                        print(f"⚠️  Fehler bei persona.txt: {e}")
+                        result = None
+            except Exception as e:
+                print(f"⚠️  Fehler bei Persona: {e}")
+                result = None
             
             # Fallback auf Standard-Template
             if result is None:
