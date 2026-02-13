@@ -252,38 +252,6 @@ class StyleSheet:
             color: {COLORS['text']};
         }}
         
-        /* ===== CONTEXT MENU (Rechtsklick-Menü) ===== */
-        QMenu {{
-            background-color: #1e1e1e;
-            color: {COLORS['text']};
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 4px;
-        }}
-        
-        QMenu::item {{
-            background-color: transparent;
-            color: {COLORS['text']};
-            padding: 8px 24px;
-            border-radius: 6px;
-            margin: 2px 4px;
-        }}
-        
-        QMenu::item:selected {{
-            background-color: {COLORS['primary']};
-            color: white;
-        }}
-        
-        QMenu::item:disabled {{
-            color: #555;
-        }}
-        
-        QMenu::separator {{
-            height: 1px;
-            background: #333;
-            margin: 4px 8px;
-        }}
-        
         /* ===== FRAME ===== */
         QFrame {{
             border: none;

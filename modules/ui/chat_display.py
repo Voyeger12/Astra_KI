@@ -9,7 +9,7 @@ weil QTextEdit kein CSS border-radius unterstützt.
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QScrollArea, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QFrame, QSizePolicy
+    QLabel, QFrame, QSizePolicy, QApplication
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
@@ -43,6 +43,8 @@ class BubbleWidget(QFrame):
             Qt.TextInteractionFlag.LinksAccessibleByMouse
         )
         self.label.setOpenExternalLinks(True)
+        self.label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.label.customContextMenuRequested.connect(self._show_context_menu)
         self.label.setText(html_content)
         self.label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         layout.addWidget(self.label)
@@ -75,6 +77,24 @@ class BubbleWidget(QFrame):
 
         # Styling
         self._apply_style()
+
+    def _show_context_menu(self, pos):
+        """Zeigt natives Windows-Kontextmenü mit Kopieren-Aktion"""
+        selected = self.label.selectedText()
+        if not selected:
+            return
+        
+        from PyQt6.QtWidgets import QMenu
+        menu = QMenu(self)
+        # Natives Look: Kein eigenes Styling — Qt nutzt Windows-Standard
+        menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        menu.setStyleSheet("")  # Globales Stylesheet überschreiben → natives Menü
+        
+        copy_action = menu.addAction("Kopieren")
+        copy_action.triggered.connect(lambda: QApplication.clipboard().setText(selected))
+        
+        menu.exec(self.label.mapToGlobal(pos))
 
     def _apply_style(self):
         """Wendet das Bubble-Stylesheet an — echte runde Ecken!"""
