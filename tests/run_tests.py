@@ -610,32 +610,42 @@ class TestSettingsManager(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp()
         self.config_dir = Path(self.tmp_dir) / "config"
+        self.config_dir.mkdir(exist_ok=True)
+        self._managers = []  # Track SettingsManager instances for cleanup
+
+    def _create_manager(self):
+        """Erstellt einen SettingsManager und trackt ihn für cleanup."""
+        from modules.ui.settings_manager import SettingsManager
+        sm = SettingsManager(self.config_dir)
+        self._managers.append(sm)
+        return sm
 
     def tearDown(self):
+        # Debounce-Timer sauber canceln bevor temp-Dir gelöscht wird
+        for sm in self._managers:
+            if sm._save_timer:
+                sm._save_timer.cancel()
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_default_values(self):
         """Default-Werte werden korrekt geladen"""
-        from modules.ui.settings_manager import SettingsManager
-        sm = SettingsManager(self.config_dir)
+        sm = self._create_manager()
         model = sm.get("selected_model")
         self.assertIsNotNone(model)
 
     def test_set_and_get(self):
         """Werte setzen und abrufen"""
-        from modules.ui.settings_manager import SettingsManager
-        sm = SettingsManager(self.config_dir)
+        sm = self._create_manager()
         sm.set("temperature", 0.5)
         self.assertEqual(sm.get("temperature"), 0.5)
 
     def test_persistence(self):
         """Werte überleben Neustart (Datei wird geschrieben)"""
-        from modules.ui.settings_manager import SettingsManager
-        sm1 = SettingsManager(self.config_dir)
+        sm1 = self._create_manager()
         sm1.set("test_key", "test_value")
         sm1.save_settings()  # Sofort schreiben statt Debounce abwarten
 
-        sm2 = SettingsManager(self.config_dir)
+        sm2 = self._create_manager()
         self.assertEqual(sm2.get("test_key"), "test_value")
 
 
@@ -647,17 +657,21 @@ class TestErrorResilience(unittest.TestCase):
 
     def test_corrupted_db_recovery(self):
         """Korrupte DB-Datei wird behandelt"""
+        import logging
         tmp_dir = tempfile.mkdtemp()
         db_path = Path(tmp_dir) / "corrupt.db"
         db_path.write_bytes(b"GARBAGE_NOT_SQLITE")
         try:
             from modules.database import Database
+            # Suppress erwarteten ERROR-Log bei korrupter DB
+            logging.disable(logging.ERROR)
             db = Database(db_path)
             # Wenn kein Crash → Recovery funktioniert
             db.close()
         except Exception:
             pass  # Auch akzeptabel
         finally:
+            logging.disable(logging.NOTSET)
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def test_memory_with_long_text(self):
