@@ -55,8 +55,10 @@ class SettingsDialog(QDialog):
         # Tabs
         tabs = QTabWidget()
         tabs.setStyleSheet(
-            f"QTabBar::tab {{ padding: 10px 20px; border-radius: 8px; margin-right: 2px; }}"
-            f"QTabBar::tab:selected {{ background: linear-gradient(90deg, {COLORS['primary']}, {COLORS['accent']}); color: white; font-weight: bold; }}"
+            f"QTabBar::tab {{ padding: 10px 22px; border-radius: 12px; margin-right: 3px; border: none; background: #1a1a1a; color: {COLORS['text_secondary']}; }}"
+            f"QTabBar::tab:selected {{ background: {COLORS['primary']}; color: white; font-weight: bold; }}"
+            f"QTabBar::tab:hover:!selected {{ background: #252525; color: {COLORS['text']}; }}"
+            f"QTabWidget::pane {{ border: none; }}"
         )
         
         tabs.addTab(self._create_model_tab(), "🤖 Modell")
@@ -71,7 +73,7 @@ class SettingsDialog(QDialog):
         ok_btn.setMinimumHeight(40)
         ok_btn.setStyleSheet(
             f"background-color: {COLORS['primary']}; color: white; border: none; "
-            f"border-radius: 8px; font-weight: bold; font-size: 11pt;"
+            f"border-radius: 14px; font-weight: bold; font-size: 11pt;"
         )
         ok_btn.clicked.connect(self.accept)
         main_layout.addWidget(ok_btn)
@@ -107,14 +109,14 @@ class SettingsDialog(QDialog):
         
         frame = QFrame()
         frame.setStyleSheet(
-            f"background-color: {COLORS['surface']}; border: 1px solid {COLORS['primary']}; border-radius: 10px;"
+            f"background-color: {COLORS['surface']}; border: 1px solid #252525; border-radius: 14px;"
         )
         inner = QVBoxLayout(frame)
         inner.setContentsMargins(12, 12, 12, 12)
         inner.setSpacing(8)
         
         label = QLabel("🤖 KI-Modell wählen:")
-        label.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 11pt;")
+        label.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 11pt; border: none;")
         inner.addWidget(label)
         
         self.model_combo = QComboBox()
@@ -128,8 +130,9 @@ class SettingsDialog(QDialog):
         
         self.model_combo.setMinimumHeight(36)
         self.model_combo.setStyleSheet(
-            f"QComboBox {{ background-color: {COLORS['background']}; color: {COLORS['text']}; "
-            f"border: 2px solid {COLORS['primary']}; border-radius: 8px; padding: 6px; }}"
+            f"QComboBox {{ background-color: #161616; color: {COLORS['text']}; "
+            f"border: 1px solid #2a2a2a; border-radius: 12px; padding: 8px 14px; }}"
+            f"QComboBox:hover {{ border: 1px solid {COLORS['primary']}60; }}"
         )
         # Speichere bei Änderung
         self.model_combo.currentTextChanged.connect(
@@ -138,7 +141,7 @@ class SettingsDialog(QDialog):
         inner.addWidget(self.model_combo)
         
         info = QLabel("Dies ist das KI-Modell, das für alle Antworten verwendet wird.")
-        info.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 9pt; font-style: italic;")
+        info.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 9pt; font-style: italic; border: none;")
         inner.addWidget(info)
         
         layout.addWidget(frame)
@@ -155,14 +158,14 @@ class SettingsDialog(QDialog):
         
         frame = QFrame()
         frame.setStyleSheet(
-            f"background-color: {COLORS['surface']}; border: 1px solid {COLORS['primary']}; border-radius: 10px;"
+            f"background-color: {COLORS['surface']}; border: 1px solid #252525; border-radius: 14px;"
         )
         inner = QVBoxLayout(frame)
         inner.setContentsMargins(12, 12, 12, 12)
         inner.setSpacing(10)
         
         title = QLabel("🔧 Funktionen")
-        title.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 11pt;")
+        title.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 11pt; border: none;")
         inner.addWidget(title)
         
         # Checkbox-Style
@@ -200,8 +203,9 @@ class SettingsDialog(QDialog):
         temp_value = int(self.settings_manager.get('temperature', 0.7) * 100)
         self.temp_slider.setValue(temp_value)
         self.temp_slider.setStyleSheet(
-            f"QSlider::groove:horizontal {{ background: {COLORS['primary']}; height: 6px; margin: 0px; }}"
-            f"QSlider::handle:horizontal {{ background: {COLORS['accent']}; width: 16px; margin: -5px 0px; border-radius: 8px; }}"
+            f"QSlider::groove:horizontal {{ background: #252525; height: 6px; border-radius: 3px; border: none; }}"
+            f"QSlider::sub-page:horizontal {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {COLORS['primary']}, stop:1 {COLORS['accent']}); border-radius: 3px; }}"
+            f"QSlider::handle:horizontal {{ background: white; border: 2px solid {COLORS['primary']}; width: 16px; margin: -6px 0px; border-radius: 9px; }}"
         )
         
         self.temp_value_label = QLabel(f"{self.temp_slider.value()/100:.2f}")
@@ -244,8 +248,8 @@ class SettingsDialog(QDialog):
         self.memory_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self.memory_list.setStyleSheet(
             f"QListWidget {{ background-color: {COLORS['surface']}; color: {COLORS['text']}; "
-            f"border: 1px solid {COLORS['primary']}; border-radius: 8px; padding: 6px; }}"
-            f"QListWidget::item {{ padding: 6px; border-bottom: 1px solid {COLORS['background']}; }}"
+            f"border: 1px solid #252525; border-radius: 12px; padding: 6px; }}"
+            f"QListWidget::item {{ padding: 8px; border-bottom: 1px solid #1a1a1a; border-radius: 6px; margin: 1px 2px; }}"
             f"QListWidget::item:selected {{ background-color: {COLORS['primary']}; color: white; }}"
         )
         self.update_memory_display()
@@ -264,7 +268,7 @@ class SettingsDialog(QDialog):
         refresh_btn.setMinimumHeight(36)
         refresh_btn.setStyleSheet(
             f"background-color: {COLORS['primary']}; color: white; border: none; "
-            f"border-radius: 8px; font-weight: bold;"
+            f"border-radius: 14px; font-weight: bold;"
         )
         refresh_btn.clicked.connect(self.update_memory_display)
         button_layout.addWidget(refresh_btn)
@@ -273,7 +277,7 @@ class SettingsDialog(QDialog):
         delete_selected_btn.setMinimumHeight(36)
         delete_selected_btn.setStyleSheet(
             f"background-color: {COLORS['warning']}; color: #000; border: none; "
-            f"border-radius: 8px; font-weight: bold;"
+            f"border-radius: 14px; font-weight: bold;"
         )
         delete_selected_btn.clicked.connect(self.delete_selected_memories)
         button_layout.addWidget(delete_selected_btn)
@@ -282,7 +286,7 @@ class SettingsDialog(QDialog):
         clear_btn.setMinimumHeight(36)
         clear_btn.setStyleSheet(
             f"background-color: {COLORS['error']}; color: white; border: none; "
-            f"border-radius: 8px; font-weight: bold;"
+            f"border-radius: 14px; font-weight: bold;"
         )
         clear_btn.clicked.connect(self.clear_memory)
         button_layout.addWidget(clear_btn)
@@ -301,14 +305,14 @@ class SettingsDialog(QDialog):
         # Text-Größe Frame
         frame = QFrame()
         frame.setStyleSheet(
-            f"background-color: {COLORS['surface']}; border: 1px solid {COLORS['primary']}; border-radius: 10px;"
+            f"background-color: {COLORS['surface']}; border: 1px solid #252525; border-radius: 14px;"
         )
         inner = QVBoxLayout(frame)
         inner.setContentsMargins(12, 12, 12, 12)
         inner.setSpacing(10)
         
         title = QLabel("📝 Chat-Text Größe")
-        title.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 11pt;")
+        title.setStyleSheet(f"color: {COLORS['primary']}; font-weight: bold; font-size: 11pt; border: none;")
         inner.addWidget(title)
         
         # Slider
@@ -329,8 +333,9 @@ class SettingsDialog(QDialog):
         self.text_size_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
         self.text_size_slider.setTickInterval(1)
         self.text_size_slider.setStyleSheet(
-            f"QSlider::groove:horizontal {{ background: {COLORS['surface']}; height: 6px; border-radius: 3px; }}"
-            f"QSlider::handle:horizontal {{ background: {COLORS['primary']}; width: 18px; margin: -6px 0; border-radius: 9px; }}"
+            f"QSlider::groove:horizontal {{ background: #252525; height: 6px; border-radius: 3px; border: none; }}"
+            f"QSlider::sub-page:horizontal {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 {COLORS['primary']}, stop:1 {COLORS['accent']}); border-radius: 3px; }}"
+            f"QSlider::handle:horizontal {{ background: white; border: 2px solid {COLORS['primary']}; width: 18px; margin: -6px 0; border-radius: 9px; }}"
         )
         size_layout.addWidget(self.text_size_slider, 1)
         
@@ -351,13 +356,13 @@ class SettingsDialog(QDialog):
         
         self.preview_user = QLabel("👤 Das ist eine Benutzer-Nachricht")
         self.preview_user.setStyleSheet(
-            f"background: {COLORS['primary']}; color: white; border-radius: 12px; padding: 8px 12px; font-size: {saved_size}pt;"
+            f"background: {COLORS['primary']}; color: white; border-radius: 14px; padding: 8px 12px; font-size: {saved_size}pt;"
         )
         inner.addWidget(self.preview_user)
         
         self.preview_ai = QLabel("🤖 Das ist eine KI-Nachricht")
         self.preview_ai.setStyleSheet(
-            f"background: #2a2a2a; color: {COLORS['text']}; border: 1px solid {COLORS['primary']}; border-radius: 12px; padding: 8px 12px; font-size: {saved_size}pt;"
+            f"background: #2a2a2a; color: {COLORS['text']}; border: none; border-radius: 14px; padding: 8px 12px; font-size: {saved_size}pt;"
         )
         inner.addWidget(self.preview_ai)
         
@@ -453,12 +458,12 @@ class SettingsDialog(QDialog):
         self.size_value_label.setText(f"{size}pt")
         
         self.preview_user.setStyleSheet(
-            f"background: {COLORS['primary']}; color: white; border-radius: 12px; "
+            f"background: {COLORS['primary']}; color: white; border-radius: 14px; "
             f"padding: 8px 12px; font-size: {size}pt; font-weight: 500;"
         )
         self.preview_ai.setStyleSheet(
-            f"background: #2a2a2a; color: {COLORS['text']}; border: 2px solid {COLORS['primary']}; "
-            f"border-radius: 12px; padding: 8px 12px; font-size: {size}pt;"
+            f"background: #2a2a2a; color: {COLORS['text']}; border: none; "
+            f"border-radius: 14px; padding: 8px 12px; font-size: {size}pt;"
         )
         
         # Speichere Einstellung
