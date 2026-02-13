@@ -584,21 +584,51 @@ class ChatWindow(QMainWindow):
         import re
         lower = text.lower().strip()
         
-        # Name: "ich heiße X" / "mein name ist X" / "ich bin X" (wenn kein Alter)
+        # Name: "ich heiße X" (Hauptsatz)
         m = re.match(r'ich hei(?:ß|ss)e\s+(.+)', lower)
         if m:
             name = text[m.start(1):m.end(1)].strip()
             return f"Name: {name}", "personal"
         
+        # Name: "ich X heiße" (Nebensatz-Wortstellung: Verb am Ende)
+        m = re.match(r'ich\s+(.+?)\s+hei(?:ß|ss)e\s*$', lower)
+        if m:
+            name = text[m.start(1):m.end(1)].strip()
+            return f"Name: {name}", "personal"
+        
+        # Name: "mein name ist X"
         m = re.match(r'mein name ist\s+(.+)', lower)
         if m:
             name = text[m.start(1):m.end(1)].strip()
             return f"Name: {name}", "personal"
         
-        # Alter: "ich bin X Jahre alt"
+        # Alter: "ich bin X Jahre alt" / "ich X Jahre alt bin" (Nebensatz)
         m = re.match(r'ich bin (\d+)\s*(?:jahre?\s*alt)?', lower)
         if m:
             return f"Alter: {m.group(1)}", "personal"
+        m = re.match(r'ich (\d+)\s*(?:jahre?\s*alt)\s+bin\s*$', lower)
+        if m:
+            return f"Alter: {m.group(1)}", "personal"
+        
+        # Wohnort: "ich in X wohne/lebe" (Nebensatz) + Hauptsatz
+        m = re.match(r'ich (?:wohne|lebe)\s+in\s+(.+)', lower)
+        if m:
+            place = text[m.start(1):m.end(1)].strip()
+            return f"Wohnort: {place}", "personal"
+        m = re.match(r'ich in\s+(.+?)\s+(?:wohne|lebe)\s*$', lower)
+        if m:
+            place = text[m.start(1):m.end(1)].strip()
+            return f"Wohnort: {place}", "personal"
+        
+        # Beruf: "ich als X arbeite" (Nebensatz) + Hauptsatz
+        m = re.match(r'ich arbeite als\s+(.+)', lower)
+        if m:
+            job = text[m.start(1):m.end(1)].strip()
+            return f"Beruf: {job}", "personal"
+        m = re.match(r'ich als\s+(.+?)\s+arbeite\s*$', lower)
+        if m:
+            job = text[m.start(1):m.end(1)].strip()
+            return f"Beruf: {job}", "personal"
         
         # Lieblingsfarbe/-essen/etc: "meine X ist Y" / "mein X ist Y"
         m = re.match(r'mein[e]?\s+(lieblings\w+)\s+ist\s+(.+)', lower)
@@ -607,27 +637,19 @@ class ChatWindow(QMainWindow):
             val = text[m.start(2):m.end(2)].strip()
             return f"{key}: {val}", "personal"
         
-        # "ich mag X" / "ich liebe X"
+        # "ich mag X" / "ich liebe X" + Nebensatz: "ich X mag/liebe"
         m = re.match(r'ich (?:mag|liebe)\s+(.+)', lower)
         if m:
             thing = text[m.start(1):m.end(1)].strip()
             return f"Mag: {thing}", "personal"
-        
-        # "ich wohne in X" / "ich lebe in X"
-        m = re.match(r'ich (?:wohne|lebe)\s+in\s+(.+)', lower)
+        m = re.match(r'ich\s+(.+?)\s+(?:mag|liebe)\s*$', lower)
         if m:
-            place = text[m.start(1):m.end(1)].strip()
-            return f"Wohnort: {place}", "personal"
+            thing = text[m.start(1):m.end(1)].strip()
+            return f"Mag: {thing}", "personal"
         
-        # "ich arbeite als X" / "ich bin X von Beruf"
-        m = re.match(r'ich arbeite als\s+(.+)', lower)
-        if m:
-            job = text[m.start(1):m.end(1)].strip()
-            return f"Beruf: {job}", "personal"
-        
+        # "ich bin X" — Rolle/Eigenschaft (kein Alter)
         m = re.match(r'ich bin\s+(.+?)(?:\s+von beruf)?$', lower)
         if m and not m.group(1).isdigit():
-            # Nur wenn es kein Alter ist und sinnvoll klingt
             role = text[m.start(1):m.end(1)].strip()
             if len(role) > 2:
                 return f"Rolle: {role}", "personal"
