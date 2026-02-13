@@ -16,7 +16,7 @@ def build_exe():
     """Baut die EXE mit PyInstaller"""
     
     print("=" * 60)
-    print("ASTRA AI - PyInstaller Build v2.1")
+    print("ASTRA AI - PyInstaller Build v2.2")
     print("=" * 60)
     
     # Prüfe PyInstaller

@@ -12,6 +12,9 @@ echo [START] ASTRA AI v2.0
 echo =========================================================
 echo Features:
 echo   - Streaming LLM-Antworten (Echtzeit)
+echo   - Mehrzeilige Eingabe (Shift+Enter)
+echo   - Modell-Auto-Erkennung (Live von Ollama)
+echo   - Antwort-Statistiken (Tokens/s, Dauer)
 echo   - MERKEN-Tag Memory System
 echo   - Rich Markdown und Code-Highlighting
 echo   - DuckDuckGo Internet-Suche
