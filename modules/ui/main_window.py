@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QPushButton, QListWidget, QListWidgetItem, QTextEdit,
     QFrame, QMessageBox, QLabel, QFileDialog,
-    QSystemTrayIcon, QMenu
+    QSystemTrayIcon, QMenu, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QFont, QIcon, QShortcut, QKeySequence, QAction
@@ -315,6 +315,7 @@ class ChatWindow(QMainWindow):
         input_frame.setStyleSheet(
             f"background: {COLORS['surface']}; border: 1px solid #2a2a2a; border-radius: 20px;"
         )
+        input_frame.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         input_layout = QHBoxLayout(input_frame)
         input_layout.setContentsMargins(14, 10, 10, 10)
         input_layout.setSpacing(10)
@@ -322,6 +323,8 @@ class ChatWindow(QMainWindow):
         self.message_input = MultiLineInput()
         self.message_input.setPlaceholderText("💬 Schreib deine Nachricht... (Shift+Enter für Zeilenumbruch)")
         self.message_input.setMinimumHeight(46)
+        self.message_input.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.message_input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.message_input.setStyleSheet(
             f"QTextEdit {{ "
             f"background-color: {COLORS['primary']}11; "
@@ -408,6 +411,7 @@ class ChatWindow(QMainWindow):
 
         if normalized_names:
             first_chat = normalized_names[0]
+            self.chat_list.setCurrentRow(0)
             self.select_chat(first_chat)
     
     def update_status(self):
@@ -1144,12 +1148,16 @@ class ChatWindow(QMainWindow):
                 QMessageBox.critical(self, "❌", "Fehler beim Löschen des Chats")
     
     def _fetch_available_models(self) -> list[str]:
-        """Holt verfügbare Modelle von Ollama, Fallback auf hardcoded Liste."""
+        """Holt verfügbare Modelle von Ollama (kurzer Timeout!), Fallback auf hardcoded Liste."""
         try:
-            live = self.ollama.get_available_models()
-            if live:
-                astra_logger.info(f"🔄 {len(live)} Modelle von Ollama geladen: {live}")
-                return live
+            import requests
+            response = requests.get(f"{self.ollama.host}/api/tags", timeout=1.5)
+            if response.status_code == 200:
+                data = response.json()
+                live = [m["name"] for m in data.get("models", [])]
+                if live:
+                    astra_logger.info(f"🔄 {len(live)} Modelle von Ollama geladen: {live}")
+                    return live
         except Exception as e:
             astra_logger.warning(f"⚠️ Modell-Abfrage fehlgeschlagen: {e}")
         astra_logger.info("📋 Nutze Fallback-Modellliste aus config")

@@ -147,12 +147,13 @@ class SettingsDialog(QDialog):
         model_row.addWidget(self.model_combo, 1)
         
         # 🔄 Refresh-Button
-        refresh_model_btn = QPushButton("🔄")
+        refresh_model_btn = QPushButton("Refresh")
         refresh_model_btn.setToolTip("Modelle von Ollama neu laden")
-        refresh_model_btn.setFixedSize(36, 36)
+        refresh_model_btn.setMinimumHeight(36)
+        refresh_model_btn.setMaximumWidth(80)
         refresh_model_btn.setStyleSheet(
             f"QPushButton {{ background-color: {COLORS['primary']}; color: white; "
-            f"border: none; border-radius: 12px; font-size: 12pt; }}"
+            f"border: none; border-radius: 12px; font-size: 9pt; font-weight: bold; }}"
             f"QPushButton:hover {{ background-color: {COLORS['primary_dark']}; }}"
         )
         refresh_model_btn.clicked.connect(self._refresh_models)
