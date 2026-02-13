@@ -28,6 +28,23 @@ if exist "venv\Scripts\activate.bat" (
     call venv\Scripts\activate.bat
 )
 
+REM =========================================================
+REM AUTO-UPDATE von GitHub
+REM =========================================================
+git --version >nul 2>&1
+if not errorlevel 1 (
+    echo [INFO] Pruefe auf Updates...
+    git pull --ff-only 2>nul
+    if not errorlevel 1 (
+        echo [OK] Neueste Version geladen.
+    ) else (
+        echo [WARN] Auto-Update fehlgeschlagen - starte mit lokaler Version.
+    )
+) else (
+    echo [INFO] Git nicht installiert - ueberspringe Auto-Update.
+)
+echo.
+
 REM Pruefe Python Installation
 python --version >nul 2>&1
 if errorlevel 1 (
