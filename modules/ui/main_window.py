@@ -587,9 +587,14 @@ class ChatWindow(QMainWindow):
             self._stop_generation()
             return
         
-        # "Merke" Funktion
+        # "Merke" Funktion — unterstützt: "merke ...", "merke dir ...", "merke dir dass ..."
         if message.lower().startswith("merke"):
             memory_text = message[5:].strip()
+            # Natürliche Präfixe entfernen die keinen Inhalt tragen
+            for prefix in ("dir dass ", "dir, dass ", "dir das ", "dir "):
+                if memory_text.lower().startswith(prefix):
+                    memory_text = memory_text[len(prefix):]
+                    break
             if memory_text:
                 self.memory_manager.learn(memory_text, "personal")
                 display_text = memory_text
